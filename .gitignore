@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+.DerivedData/
+build/
+*.xcuserstate
+*.xcuserdata/
+xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Archives
+*.xcarchive
+
+# User-specific Xcode settings
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Secrets
+.env
+*.env
+Secrets.plist
+Config.local.plist
+
+# Temporary files
+*.tmp
+*.log

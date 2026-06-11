@@ -1,0 +1,422 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000022C17500000000001 /* MyThoughtsApp.swift */; };
+		1A0000032C17500000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000042C17500000000001 /* ContentView.swift */; };
+		1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000182C17500000000001 /* InfiniteCanvasView.swift */; };
+		1A0000192C17500000000001 /* CanvasNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001A2C17500000000001 /* CanvasNode.swift */; };
+		1A00001B2C17500000000001 /* NodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001C2C17500000000001 /* NodeStore.swift */; };
+		1A00001D2C17500000000001 /* CanvasConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001E2C17500000000001 /* CanvasConnection.swift */; };
+		1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000202C17500000000001 /* AppleIntegrationService.swift */; };
+		1A0000212C17500000000001 /* MapValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000222C17500000000001 /* MapValidator.swift */; };
+		1A0000232C17500000000001 /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000242C17500000000001 /* HistoryManager.swift */; };
+		1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000262C17500000000001 /* IThoughtsImportService.swift */; };
+		1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000282C17500000000001 /* MapExportRenderer.swift */; };
+		1A0000292C17500000000001 /* OutlineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00002A2C17500000000001 /* OutlineView.swift */; };
+		1A00002B2C17500000000001 /* MapLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00002C2C17500000000001 /* MapLayoutService.swift */; };
+		1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */; };
+		1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000302C17500000000001 /* TemplateChooserView.swift */; };
+		1A0000312C17500000000001 /* StartScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000322C17500000000001 /* StartScreenView.swift */; };
+		1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */; };
+		1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */; };
+		1A0000372C17500000000001 /* CanvasSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000382C17500000000001 /* CanvasSummary.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A0000022C17500000000001 /* MyThoughtsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsApp.swift; sourceTree = "<group>"; };
+		1A0000042C17500000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1A0000052C17500000000001 /* MyThoughts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyThoughts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000182C17500000000001 /* InfiniteCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfiniteCanvasView.swift; sourceTree = "<group>"; };
+		1A00001A2C17500000000001 /* CanvasNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasNode.swift; sourceTree = "<group>"; };
+		1A00001C2C17500000000001 /* NodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeStore.swift; sourceTree = "<group>"; };
+		1A00001E2C17500000000001 /* CanvasConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasConnection.swift; sourceTree = "<group>"; };
+		1A0000202C17500000000001 /* AppleIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntegrationService.swift; sourceTree = "<group>"; };
+		1A0000222C17500000000001 /* MapValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapValidator.swift; sourceTree = "<group>"; };
+		1A0000242C17500000000001 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
+		1A0000262C17500000000001 /* IThoughtsImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IThoughtsImportService.swift; sourceTree = "<group>"; };
+		1A0000282C17500000000001 /* MapExportRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapExportRenderer.swift; sourceTree = "<group>"; };
+		1A00002A2C17500000000001 /* OutlineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineView.swift; sourceTree = "<group>"; };
+		1A00002C2C17500000000001 /* MapLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayoutService.swift; sourceTree = "<group>"; };
+		1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuiltInTemplateFactory.swift; sourceTree = "<group>"; };
+		1A0000302C17500000000001 /* TemplateChooserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateChooserView.swift; sourceTree = "<group>"; };
+		1A0000322C17500000000001 /* StartScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartScreenView.swift; sourceTree = "<group>"; };
+		1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsDocumentData.swift; sourceTree = "<group>"; };
+		1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLinePathBuilder.swift; sourceTree = "<group>"; };
+		1A0000382C17500000000001 /* CanvasSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSummary.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A0000062C17500000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A0000072C17500000000001 = {
+			isa = PBXGroup;
+			children = (
+				1A0000082C17500000000001 /* MyThoughts */,
+				1A0000092C17500000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1A0000082C17500000000001 /* MyThoughts */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000022C17500000000001 /* MyThoughtsApp.swift */,
+				1A0000042C17500000000001 /* ContentView.swift */,
+				1A00000A2C17500000000001 /* Views */,
+				1A00000B2C17500000000001 /* Models */,
+				1A00000C2C17500000000001 /* Utilities */,
+			);
+			path = MyThoughts;
+			sourceTree = "<group>";
+		};
+		1A0000092C17500000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000052C17500000000001 /* MyThoughts.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1A00000A2C17500000000001 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000182C17500000000001 /* InfiniteCanvasView.swift */,
+				1A00002A2C17500000000001 /* OutlineView.swift */,
+				1A0000322C17500000000001 /* StartScreenView.swift */,
+				1A0000302C17500000000001 /* TemplateChooserView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		1A00000B2C17500000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				1A00001A2C17500000000001 /* CanvasNode.swift */,
+				1A00001E2C17500000000001 /* CanvasConnection.swift */,
+				1A0000382C17500000000001 /* CanvasSummary.swift */,
+				1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		1A00000C2C17500000000001 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				1A00001C2C17500000000001 /* NodeStore.swift */,
+				1A0000202C17500000000001 /* AppleIntegrationService.swift */,
+				1A0000222C17500000000001 /* MapValidator.swift */,
+				1A0000242C17500000000001 /* HistoryManager.swift */,
+				1A0000262C17500000000001 /* IThoughtsImportService.swift */,
+				1A0000282C17500000000001 /* MapExportRenderer.swift */,
+				1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */,
+				1A00002C2C17500000000001 /* MapLayoutService.swift */,
+				1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A00000D2C17500000000001 /* MyThoughts */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MyThoughts" */;
+			buildPhases = (
+				1A00000F2C17500000000001 /* Sources */,
+				1A0000062C17500000000001 /* Frameworks */,
+				1A0000102C17500000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MyThoughts;
+			productName = MyThoughts;
+			productReference = 1A0000052C17500000000001 /* MyThoughts.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A0000112C17500000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					1A00000D2C17500000000001 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+				};
+			};
+			buildConfigurationList = 1A0000122C17500000000001 /* Build configuration list for PBXProject "MyThoughts" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 1A0000072C17500000000001;
+			productRefGroup = 1A0000092C17500000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A00000D2C17500000000001 /* MyThoughts */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A0000102C17500000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A00000F2C17500000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */,
+				1A0000032C17500000000001 /* ContentView.swift in Sources */,
+				1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */,
+				1A0000192C17500000000001 /* CanvasNode.swift in Sources */,
+				1A00001B2C17500000000001 /* NodeStore.swift in Sources */,
+				1A00001D2C17500000000001 /* CanvasConnection.swift in Sources */,
+				1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */,
+				1A0000212C17500000000001 /* MapValidator.swift in Sources */,
+				1A0000232C17500000000001 /* HistoryManager.swift in Sources */,
+				1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */,
+				1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */,
+				1A0000292C17500000000001 /* OutlineView.swift in Sources */,
+				1A00002B2C17500000000001 /* MapLayoutService.swift in Sources */,
+				1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */,
+				1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */,
+				1A0000312C17500000000001 /* StartScreenView.swift in Sources */,
+				1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */,
+				1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */,
+				1A0000372C17500000000001 /* CanvasSummary.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A0000132C17500000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1A0000142C17500000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		1A0000152C17500000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.MyThoughts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1A0000162C17500000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.MyThoughts;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A0000122C17500000000001 /* Build configuration list for PBXProject "MyThoughts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000132C17500000000001 /* Debug */,
+				1A0000142C17500000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MyThoughts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000152C17500000000001 /* Debug */,
+				1A0000162C17500000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A0000112C17500000000001 /* Project object */;
+}
