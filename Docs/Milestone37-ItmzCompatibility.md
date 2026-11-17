@@ -6,12 +6,28 @@ Format reference: [`ITMZ_FORMAT.md`](ITMZ_FORMAT.md) (derived from 195 real maps
 
 | Step | Scope | Status |
 |---|---|---|
-| 37A | `ItmzKit`: ZIP (Compression framework), order-preserving XML DOM, iThoughts-identical serializer, `ItmzDocument` load/apply/save, XCTests | **written – needs first Xcode build** |
-| 37B | `IThoughtsImportService` rebuilt on ItmzKit: original layout, folded state, notes, normalized links, task fields, markers, summaries, floating topics; no more `/usr/bin/ditto` | **written – needs first Xcode build** |
-| 37C | Model + canvas: topic color, relationship lines (label/color/arrow), Markdown rendering of titles, topic images | planned |
-| 37D | Export any map as `.itmz` | planned |
-| 37E | Open/Save `.itmz` in place, preserving untouched data (needs 36B/36C cleanup first) | planned |
+| 37A | `ItmzKit`: ZIP, order-preserving XML DOM, iThoughts-identical serializer, `ItmzDocument` load/apply/save, XCTests | **done** (21 tests) |
+| 37B | `IThoughtsImportService` on ItmzKit: layout, folded state, notes, links, task fields, markers, summaries, floating topics | **done** |
+| 37C | Topic colour (+ inherited colour, coloured branch lines), 13 shapes, text size, boundaries, topic images, Markdown titles, relationship lines (curve/straight/elbow, arrows/dots, dashed, colour, label); same rendering in PDF/PNG/print | **done** |
+| 37D | Export any map as `.itmz` (File ▸ Export as iThoughts, ⇧⌘E) | **done** |
+| 37E | Open `.itmz` directly (File ▸ Open, Finder double-click), edit, Save writes back in place; untouched data preserved, backup of the previous file in `~/Library/Application Support/MyThoughts/iThoughts Backups` | **done** |
 | 37F | App Store readiness: bundle ID, App Sandbox + user-selected files entitlement, privacy manifest | planned |
+
+### Verified (2026-11-17, all 195 sample maps)
+
+* open → save without edits: `mapdata.xml` byte-identical, every other archive entry identical;
+* edit (title, colour, shape, new child, delete leaf, new relationship) → save → reopen: all edits present, positions kept;
+* export without the original file (new `.itmz`) → reopen: same topics, fields, images, relationships, summaries, floating topics.
+
+### Editing in MyThoughts
+
+* Right-click a selected topic: **Colour**, **Shape**, **Text Size**, **Add/Remove Boundary**, **Image ▸ Add/Replace/Remove**, **Add Relationship...**, **Relationships ▸ Edit/Delete**.
+* **Insert ▸ Relationship** (⇧⌘R): with two topics selected connects them, with one selected click the other end (Esc cancels).
+* Click a relationship line to select it (Delete removes, Return edits); double-click opens the editor.
+
+### Still kept-but-not-drawn
+
+Groups, callouts, numbering, auto-sorting, sub-map layouts and `style.xml` level styles are preserved in the file but not rendered or edited yet.
 
 ## Code layout
 
@@ -24,7 +40,9 @@ ItmzKit/                         Swift package (Foundation + Compression only)
     ItmzDocument.swift           ItmzDocument (the DOM is the model), ItmzTopicNode, ItmzFormat
     ItmzLinks.swift              link normalization (www.…, mailto, …)
   Tests/ItmzKitTests/            XCTests (opt-in run over real maps)
-MyThoughts/Utilities/IThoughtsImportService.swift   .itmz -> CanvasNode/Connection/Summary
+MyThoughts/Utilities/IThoughtsImportService.swift   .itmz -> CanvasNode/Connection/Summary/Relationship
+MyThoughts/Utilities/ItmzExportService.swift        CanvasNode... -> .itmz (in place via ItmzEditingSession, or new)
+MyThoughts/Views/TopicStyleRendering.swift          colours, shapes, images, relationship + boundary drawing
 ```
 
 The four `ItmzKit/Sources/ItmzKit/*.swift` files are **also compiled directly into the

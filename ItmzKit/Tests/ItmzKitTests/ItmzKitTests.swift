@@ -229,3 +229,83 @@ func canonical(_ element: ItmzXMLElement) -> String {
         .joined(separator: " ")
     return "<\(element.tag) \(attributes)>" + element.children.map(canonical).joined() + "</\(element.tag)>"
 }
+
+final class ItmzEditingTests: XCTestCase {
+    private func makeDocument() throws -> ItmzDocument {
+        let document = ItmzDocument.makeNew(title: "Root")
+        var tree = document.topicTree()
+        tree[0].children = [
+            ItmzTopicNode(attributes: ["uuid": "A", "position": "{200, 0}", "text": "A", "shape": "8"]),
+            ItmzTopicNode(attributes: ["uuid": "B", "position": "{-200, 0}", "text": "B"])
+        ]
+        try document.apply(tree, managedKeys: ItmzDocument.extendedManagedAttributes)
+        return document
+    }
+
+    func testApplyingUnchangedTreeChangesNothing() throws {
+        let document = try makeDocument()
+        let before = document.mapDataBytes()
+        let manifestBefore = document.file(named: "manifest.plist")
+        try document.apply(document.topicTree(), managedKeys: ItmzDocument.extendedManagedAttributes)
+        XCTAssertEqual(document.mapDataBytes(), before)
+        XCTAssertEqual(document.file(named: "manifest.plist"), manifestBefore)
+    }
+
+    func testExtendedKeysAreWrittenAndDefaultKeysLeaveThemAlone() throws {
+        let document = try makeDocument()
+        XCTAssertEqual(document.allTopics.first { $0["uuid"] == "A" }?["shape"], "8")
+        // The default (8-attribute) apply must not strip attributes it does not manage.
+        try document.apply(document.topicTree().map { root in
+            var root = root
+            root.children = root.children.map { child in
+                var child = child
+                child.attributes["shape"] = nil
+                return child
+            }
+            return root
+        })
+        XCTAssertEqual(document.allTopics.first { $0["uuid"] == "A" }?["shape"], "8")
+    }
+
+    func testRelationshipsCreateUpdateDeleteAndKeepUnmanagedAttributes() throws {
+        let document = try makeDocument()
+        XCTAssertTrue(document.applyRelationships([
+            ["uuid": "R1", "type": "0", "end1-uuid": "A", "end2-uuid": "B", "end2-style": "1", "center-text": "hi"],
+            ["uuid": "R2", "type": "1", "end1-uuid": "B", "end2-uuid": "A"]
+        ]))
+        let first = try XCTUnwrap(document.relationships.first { $0["uuid"] == "R1" })
+        first["b-offset"] = "{10, 20}"
+        XCTAssertEqual(first.attributes.map(\.name), ["type", "uuid", "end1-uuid", "end2-uuid", "end2-style", "center-text", "b-offset"])
+
+        let unchanged = document.relationshipAttributes()
+        XCTAssertFalse(document.applyRelationships(unchanged), "same list must be a no-op")
+
+        XCTAssertTrue(document.applyRelationships([
+            ["uuid": "R1", "type": "2", "end1-uuid": "A", "end2-uuid": "B", "end2-style": "1", "color": "DC322F"]
+        ]))
+        XCTAssertEqual(document.relationships.count, 1)
+        let updated = try XCTUnwrap(document.relationships.first)
+        XCTAssertEqual(updated["type"], "2")
+        XCTAssertEqual(updated["color"], "DC322F")
+        XCTAssertNil(updated["center-text"])
+        XCTAssertEqual(updated["b-offset"], "{10, 20}")
+
+        let reopened = try ItmzDocument(data: document.archiveData())
+        XCTAssertEqual(reopened.relationshipAttributes(), document.relationshipAttributes())
+    }
+
+    func testSetFileAddsAndRemovesAssets() throws {
+        let document = try makeDocument()
+        document.setFile(Data([1, 2, 3]), named: "assets/X/a.png")
+        var reopened = try ItmzDocument(data: document.archiveData())
+        XCTAssertEqual(reopened.file(named: "assets/X/a.png"), Data([1, 2, 3]))
+        XCTAssertEqual(reopened.entryNames.first, "mapdata.xml")
+        XCTAssertEqual(reopened.imagePath(forTopicAttributes: ["att-id": "X", "att-name": "a.png"]), "assets/X/a.png")
+
+        document.setFile(nil, named: "assets/X/a.png")
+        reopened = try ItmzDocument(data: document.archiveData())
+        XCTAssertNil(reopened.file(named: "assets/X/a.png"))
+        document.setFile(nil, named: "mapdata.xml")
+        XCTAssertNotNil(document.file(named: "mapdata.xml"), "mapdata.xml cannot be removed")
+    }
+}

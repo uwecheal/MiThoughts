@@ -1,11 +1,37 @@
 import SwiftUI
 
+/// Files opened from Finder (double-click, "Open With", drag onto the Dock icon) wait here
+/// until the canvas takes them, so a file that arrives during launch is never lost.
+enum ExternalOpenQueue {
+    private(set) static var pending: [URL] = []
+
+    static func enqueue(_ url: URL) {
+        pending.append(url)
+        NotificationCenter.default.post(name: MyThoughtsFileCommand.openURL, object: nil)
+    }
+
+    /// The most recent request (older ones are superseded), or nil.
+    static func takeLatest() -> URL? {
+        defer { pending.removeAll() }
+        return pending.last
+    }
+}
+
+final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if let url = urls.last {
+            ExternalOpenQueue.enqueue(url)
+        }
+    }
+}
+
 @main
 struct MyThoughtsApp: App {
+    @NSApplicationDelegateAdaptor(MyThoughtsAppDelegate.self) private var appDelegate
     @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
 
     var body: some Scene {
-        WindowGroup {
+        Window("MyThoughts", id: "main") {
             ContentView()
                 .frame(minWidth: 720, minHeight: 480)
         }
@@ -65,6 +91,15 @@ struct MyThoughtsApp: App {
 
                 Divider()
 
+                Button("Import iThoughts (.itmz)...") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.importITMZ, object: nil)
+                }
+
+                Button("Export as iThoughts (.itmz)...") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.exportITMZ, object: nil)
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+
                 Button("Export as PDF...") {
                     NotificationCenter.default.post(name: MyThoughtsFileCommand.exportPDF, object: nil)
                 }
@@ -86,6 +121,13 @@ struct MyThoughtsApp: App {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleOutline, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .option])
+            }
+
+            CommandMenu("Insert") {
+                Button("Relationship") {
+                    NotificationCenter.default.post(name: MyThoughtsViewCommand.addRelationship, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
 
             CommandMenu("Branch") {

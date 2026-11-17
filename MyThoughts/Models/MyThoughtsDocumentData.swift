@@ -16,6 +16,7 @@ struct MyThoughtsDocumentData: Codable {
     var nodes: [CanvasNode]
     var connections: [CanvasConnection]
     var summaries: [CanvasSummary]
+    var relationships: [CanvasRelationship]
     var canvasAppearanceSettings: CanvasAppearance
     var notePanelSettings: NotePanelSettings
     var metadata: [String: String]
@@ -39,6 +40,7 @@ struct MyThoughtsDocumentData: Codable {
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
+        relationships: [CanvasRelationship] = [],
         canvasAppearanceSettings: CanvasAppearance = CanvasAppearance(),
         notePanelSettings: NotePanelSettings = NotePanelSettings(),
         metadata: [String: String] = [:]
@@ -51,6 +53,7 @@ struct MyThoughtsDocumentData: Codable {
         self.nodes = nodes
         self.connections = connections
         self.summaries = summaries
+        self.relationships = relationships
         self.canvasAppearanceSettings = canvasAppearanceSettings
         self.notePanelSettings = notePanelSettings
         self.metadata = metadata
@@ -65,6 +68,7 @@ struct MyThoughtsDocumentData: Codable {
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
+        relationships: [CanvasRelationship] = [],
         canvasSettings: CanvasAppearance,
         notePanelSettings: NotePanelSettings = NotePanelSettings(),
         metadata: [String: String] = [:]
@@ -78,6 +82,7 @@ struct MyThoughtsDocumentData: Codable {
             nodes: nodes,
             connections: connections,
             summaries: summaries,
+            relationships: relationships,
             canvasAppearanceSettings: canvasSettings,
             notePanelSettings: notePanelSettings,
             metadata: metadata
@@ -93,6 +98,7 @@ struct MyThoughtsDocumentData: Codable {
         case nodes
         case connections
         case summaries
+        case relationships
         case canvasAppearanceSettings = "canvasSettings"
         case notePanelSettings
         case metadata
@@ -110,6 +116,7 @@ struct MyThoughtsDocumentData: Codable {
         nodes = try container.decodeIfPresent([CanvasNode].self, forKey: .nodes) ?? []
         connections = try container.decodeIfPresent([CanvasConnection].self, forKey: .connections) ?? []
         summaries = try container.decodeIfPresent([CanvasSummary].self, forKey: .summaries) ?? []
+        relationships = try container.decodeIfPresent([CanvasRelationship].self, forKey: .relationships) ?? []
         canvasAppearanceSettings = try container.decodeIfPresent(CanvasAppearance.self, forKey: .canvasAppearanceSettings) ?? CanvasAppearance()
         notePanelSettings = try container.decodeIfPresent(NotePanelSettings.self, forKey: .notePanelSettings) ?? NotePanelSettings()
         metadata = try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]

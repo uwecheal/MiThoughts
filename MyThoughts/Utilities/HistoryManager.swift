@@ -4,6 +4,7 @@ struct MapHistorySnapshot: Equatable {
     var nodes: [CanvasNode]
     var connections: [CanvasConnection]
     var summaries: [CanvasSummary] = []
+    var relationships: [CanvasRelationship] = []
 }
 
 struct HistoryManager {

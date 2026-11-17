@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002042C17500000000001 /* TopicStyleRendering.swift */; };
+		1A0002012C17500000000001 /* ItmzExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002022C17500000000001 /* ItmzExportService.swift */; };
 		1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000022C17500000000001 /* MyThoughtsApp.swift */; };
 		1A0000032C17500000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000042C17500000000001 /* ContentView.swift */; };
 		1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000182C17500000000001 /* InfiniteCanvasView.swift */; };
@@ -33,6 +35,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1A0002042C17500000000001 /* TopicStyleRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStyleRendering.swift; sourceTree = "<group>"; };
+		1A0002022C17500000000001 /* ItmzExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzExportService.swift; sourceTree = "<group>"; };
 		1A0000022C17500000000001 /* MyThoughtsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsApp.swift; sourceTree = "<group>"; };
 		1A0000042C17500000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		1A0000052C17500000000001 /* MyThoughts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyThoughts.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -104,6 +108,7 @@
 			children = (
 				1A0000182C17500000000001 /* InfiniteCanvasView.swift */,
 				1A00002A2C17500000000001 /* OutlineView.swift */,
+				1A0002042C17500000000001 /* TopicStyleRendering.swift */,
 				1A0000322C17500000000001 /* StartScreenView.swift */,
 				1A0000302C17500000000001 /* TemplateChooserView.swift */,
 			);
@@ -130,6 +135,7 @@
 				1A0000242C17500000000001 /* HistoryManager.swift */,
 				1A0000262C17500000000001 /* IThoughtsImportService.swift */,
 				1A0000282C17500000000001 /* MapExportRenderer.swift */,
+				1A0002022C17500000000001 /* ItmzExportService.swift */,
 				1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */,
 				1A00002C2C17500000000001 /* MapLayoutService.swift */,
 				1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */,
@@ -228,7 +234,9 @@
 				1A0000232C17500000000001 /* HistoryManager.swift in Sources */,
 				1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */,
 				1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */,
+				1A0002012C17500000000001 /* ItmzExportService.swift in Sources */,
 				1A0000292C17500000000001 /* OutlineView.swift in Sources */,
+				1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */,
 				1A00002B2C17500000000001 /* MapLayoutService.swift in Sources */,
 				1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */,
 				1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */,
@@ -372,6 +380,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyThoughts/Info.plist;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
 				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;
@@ -402,6 +411,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MyThoughts/Info.plist;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
 				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;

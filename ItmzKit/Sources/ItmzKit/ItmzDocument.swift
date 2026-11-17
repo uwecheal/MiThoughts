@@ -59,6 +59,19 @@ final class ItmzDocument {
     /// Attributes an editor may change. Everything else is read-only.
     static let managedAttributes = ["text", "note", "link", "color", "icon1", "icon2", "folded", "position"]
 
+    /// The wider set a full editor (MyThoughts) manages: style, task, image and summary fields.
+    /// Callers must pass the original value for every key they did not change, or it is removed.
+    static let extendedManagedAttributes = managedAttributes + [
+        "shape", "text-size", "boundary", "floating",
+        "task-progress", "task-start", "task-due", "task-priority", "task-effort", "cost", "cost-type",
+        "att-id", "att-name", "image-width", "summary1", "summary2"
+    ]
+
+    /// Relationship attributes an editor may change; others (e.g. `b-offset`) are kept.
+    static let managedRelationshipAttributes = [
+        "type", "end1-uuid", "end1-style", "end2-uuid", "end2-style", "color", "dashed", "center-text"
+    ]
+
     private(set) var entryNames: [String]
     private(set) var files: [String: Data]
     private(set) var xml: ItmzXMLDocument
@@ -233,11 +246,14 @@ final class ItmzDocument {
     ///   references cleaned up;
     /// * order and parentage follow `topics`.
     @discardableResult
-    func apply(_ topics: [ItmzTopicNode], now: Date = Date()) throws -> ItmzChangeReport {
+    func apply(_ topics: [ItmzTopicNode],
+               managedKeys: [String] = ItmzDocument.managedAttributes,
+               now: Date = Date()) throws -> ItmzChangeReport {
         guard !topics.isEmpty else {
             throw ItmzError.emptyMap
         }
         let stamp = ItmzFormat.timestamp(now)
+        let bytesBefore = xml.data()
         var index: [String: ItmzXMLElement] = [:]
         var oldParent: [String: String] = [:]
         for element in allTopics {
@@ -286,7 +302,7 @@ final class ItmzDocument {
                 changed = true
             }
 
-            for key in ItmzDocument.managedAttributes {
+            for key in managedKeys {
                 let newValue = node.attributes[key]
                 let oldValue = element[key]
                 if key == "position" {
@@ -332,10 +348,107 @@ final class ItmzDocument {
         }
         report.deleted = Set(index.keys).subtracting(seen).count
         dropDanglingReferences(alive: seen)
-        root["modified"] = stamp
+        // Only a real change (content, order, structure) touches the map's timestamp and manifest,
+        // so "open, don't edit, save" stays byte-identical.
+        if xml.data() != bytesBefore {
+            root["modified"] = stamp
+            files["mapdata.xml"] = xml.data()
+            refreshManifest(now: now)
+        }
+        return report
+    }
+
+    /// Replaces the relationship list. Known uuids keep every non-managed attribute
+    /// (such as `b-offset`); new ones are created; missing ones are removed.
+    /// Returns true when mapdata.xml changed.
+    @discardableResult
+    func applyRelationships(_ relationships: [[String: String]], now: Date = Date()) -> Bool {
+        let container: ItmzXMLElement
+        if let existing = root.firstChild(named: "relationships") {
+            container = existing
+        } else if relationships.isEmpty {
+            return false
+        } else {
+            container = ItmzXMLElement(tag: "relationships", text: "\n", tail: "\n")
+            let insertIndex = (root.children.firstIndex { $0.tag == "topics" } ?? -1) + 1
+            root.children.insert(container, at: insertIndex)
+        }
+
+        var index: [String: ItmzXMLElement] = [:]
+        for element in container.children(named: "relationship") {
+            if let uuid = element["uuid"] {
+                index[uuid] = element
+            }
+        }
+
+        var changed = false
+        var built: [ItmzXMLElement] = []
+        var seen = Set<String>()
+        for attributes in relationships {
+            var uuid = attributes["uuid"] ?? ""
+            if uuid.isEmpty {
+                uuid = ItmzFormat.newUUID()
+            }
+            guard !seen.contains(uuid) else {
+                continue
+            }
+            seen.insert(uuid)
+
+            let element: ItmzXMLElement
+            if let existing = index[uuid] {
+                element = existing
+            } else {
+                element = ItmzXMLElement(tag: "relationship", attributes: [
+                    .init(name: "type", value: attributes["type"] ?? "0"),
+                    .init(name: "uuid", value: uuid)
+                ])
+                changed = true
+            }
+            for key in ItmzDocument.managedRelationshipAttributes {
+                let newValue = attributes[key].flatMap { $0.isEmpty ? nil : $0 }
+                if element[key] != newValue {
+                    element[key] = newValue
+                    changed = true
+                }
+            }
+            element.tail = "\n"
+            built.append(element)
+        }
+
+        let others = container.children.filter { $0.tag != "relationship" }
+        if Set(index.keys) != seen {
+            changed = true
+        }
+        if !changed && built.map({ $0["uuid"] }) == container.children(named: "relationship").map({ $0["uuid"] }) {
+            return false
+        }
+        container.children = built + others
+        container.text = "\n"
+        root["modified"] = ItmzFormat.timestamp(now)
         files["mapdata.xml"] = xml.data()
         refreshManifest(now: now)
-        return report
+        return true
+    }
+
+    /// Adds, replaces (data != nil) or removes (data == nil) an archive entry such as `assets/<id>/<name>`.
+    func setFile(_ data: Data?, named name: String) {
+        guard name != "mapdata.xml" else {
+            return
+        }
+        if let data {
+            files[name] = data
+            if !entryNames.contains(name) {
+                entryNames.append(name)
+            }
+        } else {
+            files[name] = nil
+            entryNames.removeAll { $0 == name }
+        }
+    }
+
+    /// Relationship attributes, in file order.
+    func relationshipAttributes() -> [[String: String]] {
+        relationships.map(\.attributeDictionary)
     }
 
     private func dropDanglingReferences(alive: Set<String>) {
