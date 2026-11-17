@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>itmz-studio</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="toolbar">
+  <div class="group">
+    <button data-cmd="open" class="edit-only" title="打开导图 (⌘O)">📂 打开</button>
+    <button data-cmd="new" class="edit-only" title="新建导图">＋ 新建</button>
+    <button data-cmd="save" class="edit-only primary" title="保存 (⌘S)">💾 保存</button>
+    <button data-cmd="saveAs" class="edit-only" title="另存为">另存为</button>
+    <div class="menu edit-only">
+      <button title="导出磁盘上已保存的版本">⇪ 导出 ▾</button>
+      <div class="menu-items">
+        <a data-fmt="md">Markdown (.md)</a>
+        <a data-fmt="opml">OPML (.opml)</a>
+        <a data-fmt="html">离线 HTML (.html)</a>
+        <a data-fmt="mm">FreeMind / Freeplane (.mm)</a>
+        <a data-fmt="json">JSON 全量 (.json)</a>
+      </div>
+    </div>
+  </div>
+  <div class="group edit-only">
+    <button data-cmd="addChild" title="添加子主题 (Tab)">↳ 子主题</button>
+    <button data-cmd="addSibling" title="添加同级主题 (Enter)">↓ 同级</button>
+    <button data-cmd="remove" title="删除 (Delete)">🗑</button>
+    <button data-cmd="undo" title="撤销 (⌘Z)">↶</button>
+    <button data-cmd="redo" title="重做 (⇧⌘Z)">↷</button>
+  </div>
+  <div class="group">
+    <button data-cmd="expandAll" title="全部展开">⊞</button>
+    <button data-cmd="collapseAll" title="折叠到第一层">⊟</button>
+    <button data-cmd="zoomOut" title="缩小 (⌘−)">−</button>
+    <button data-cmd="zoomReset" id="zoomLabel" title="100%">100%</button>
+    <button data-cmd="zoomIn" title="放大 (⌘+)">＋</button>
+    <button data-cmd="fit" title="适应窗口 (⌘0)">⤢</button>
+    <button data-cmd="toggleLayout" id="layoutBtn" title="切换：原始布局 / 自动整理（仅显示，不改文件）">布局：原始</button>
+    <button data-cmd="toggleOutline" title="大纲视图">☰ 大纲</button>
+  </div>
+  <div class="group grow">
+    <span id="docTitle"></span><span id="dirty" title="有未保存的修改"></span>
+  </div>
+  <div class="group">
+    <input id="search" type="search" placeholder="搜索 (⌘F)" autocomplete="off">
+    <span id="searchInfo"></span>
+  </div>
+</header>
+
+<main id="main">
+  <aside id="outline" hidden></aside>
+  <div id="canvas" tabindex="0">
+    <div id="world">
+      <svg id="links" width="1" height="1"></svg>
+      <div id="nodes"></div>
+    </div>
+    <div id="empty">
+      <p>itmz-studio：iThoughts 导图查看 / 编辑 / 导出</p>
+      <p class="edit-only"><button data-cmd="open">打开一个 .itmz 文件</button></p>
+    </div>
+  </div>
+  <aside id="inspector">
+    <div id="insEmpty" class="muted">选中一个主题以查看或编辑它的文字、备注、链接、颜色与图标。</div>
+    <div id="insBody" hidden>
+      <label class="edit-only">文字 <small>(Markdown)</small>
+        <textarea id="fText" rows="3"></textarea></label>
+      <div id="vText" class="view-only md"></div>
+      <label class="edit-only">链接
+        <span class="row"><input id="fLink" type="text" placeholder="https://…"><a id="fLinkOpen" target="_blank" rel="noopener noreferrer" title="打开链接">↗</a></span></label>
+      <div id="vLink" class="view-only"></div>
+      <div class="edit-only row wrap">
+        <label class="inline">颜色 <input id="fColor" type="color"></label>
+        <span id="swatches"></span>
+        <button id="fColorClear" title="清除颜色">无</button>
+      </div>
+      <label class="edit-only">图标
+        <select id="fIcon"></select></label>
+      <div class="notehead"><b>备注</b> <small class="edit-only">(Markdown)</small>
+        <button id="fNotePreview" class="edit-only small">预览</button></div>
+      <textarea id="fNote" class="edit-only" rows="10"></textarea>
+      <div id="vNote" class="md"></div>
+      <details id="insMeta"><summary>其它属性（只读，保存时原样保留）</summary><table id="metaTable"></table></details>
+    </div>
+  </aside>
+</main>
+
+<div id="modal" hidden>
+  <div class="dialog">
+    <div class="row"><b id="modalTitle">打开导图</b><span class="grow"></span><button data-close>✕</button></div>
+    <input id="fileFilter" type="search" placeholder="按文件名过滤…">
+    <div id="fileRoot" class="muted"></div>
+    <ul id="fileList"></ul>
+  </div>
+</div>
+<div id="toast"></div>
+<script src="md.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
