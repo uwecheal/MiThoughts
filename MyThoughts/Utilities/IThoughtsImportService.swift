@@ -1,457 +1,352 @@
 import Foundation
 import CoreGraphics
 
+/// What was (and was not yet) carried over from the .itmz file.
+struct IThoughtsImportReport: Equatable {
+    var topicCount = 0
+    var floatingTopicCount = 0
+    var summaryCount = 0
+    var relationshipCount = 0   // shown from milestone 37C
+    var imageCount = 0          // shown from milestone 37C
+    var coloredTopicCount = 0   // shown from milestone 37C
+    var unmappedIconCount = 0
+
+    /// One line for the status message, or nil when nothing was left out.
+    var notImportedDescription: String? {
+        var parts: [String] = []
+        if relationshipCount > 0 {
+            parts.append("\(relationshipCount) relationship line(s)")
+        }
+        if imageCount > 0 {
+            parts.append("\(imageCount) topic image(s)")
+        }
+        if coloredTopicCount > 0 {
+            parts.append("colors on \(coloredTopicCount) topic(s)")
+        }
+        if unmappedIconCount > 0 {
+            parts.append("\(unmappedIconCount) icon(s) without a matching marker")
+        }
+        guard !parts.isEmpty else {
+            return nil
+        }
+        return "Not imported yet: " + parts.joined(separator: ", ") + "."
+    }
+}
+
 struct IThoughtsImportResult {
     var nodes: [CanvasNode]
     var connections: [CanvasConnection]
     var rootNodeIDs: [CanvasNode.ID]
+    var summaries: [CanvasSummary] = []
+    var report = IThoughtsImportReport()
 }
 
 enum IThoughtsImportError: LocalizedError {
-    case unzipFailed
-    case missingXML
-    case unreadableXML
-    case unsupportedStructure
+    case unreadableFile(String)
     case emptyMap
 
     var errorDescription: String? {
         switch self {
-        case .unzipFailed:
-            "The selected .itmz file could not be unpacked."
-        case .missingXML:
-            "No map XML file was found in the .itmz archive."
-        case .unreadableXML:
-            "The iThoughts XML file could not be read."
-        case .unsupportedStructure:
-            "The iThoughts XML structure was not recognized."
+        case let .unreadableFile(reason):
+            return "The .itmz file could not be read. \(reason)"
         case .emptyMap:
-            "The iThoughts file did not contain any importable topics."
+            return "The iThoughts file did not contain any importable topics."
         }
     }
 }
 
+/// Converts an iThoughts map into MyThoughts nodes, keeping the original layout.
+///
+/// iThoughts stores each topic's *centre* relative to its parent's centre
+/// (`position="{x, y}"`); MyThoughts stores absolute top-left corners. Floating
+/// topics become separate roots, folded topics stay collapsed, task fields,
+/// notes, links, markers and summaries are mapped. See Docs/ITMZ_FORMAT.md.
 enum IThoughtsImportService {
-    private static let defaultNodeSize = CGSize(width: 160, height: 48)
-    private static let horizontalSpacing: CGFloat = 220
-    private static let verticalSpacing: CGFloat = 90
-
     static func `import`(from url: URL) throws -> IThoughtsImportResult {
-        let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MyThoughts-iThoughts-\(UUID().uuidString)", isDirectory: true)
-
-        try FileManager.default.createDirectory(
-            at: temporaryDirectory,
-            withIntermediateDirectories: true
-        )
-
-        defer {
-            try? FileManager.default.removeItem(at: temporaryDirectory)
+        let document: ItmzDocument
+        do {
+            document = try ItmzDocument(contentsOf: url)
+        } catch {
+            throw IThoughtsImportError.unreadableFile(error.localizedDescription)
         }
+        return try convert(document)
+    }
 
-        try unzipITMZ(at: url, to: temporaryDirectory)
-        let xmlURL = try findMapDataXML(in: temporaryDirectory)
-        let parsedRoots = try parseIThoughtsXML(at: xmlURL)
-
-        guard !parsedRoots.isEmpty else {
+    static func convert(_ document: ItmzDocument) throws -> IThoughtsImportResult {
+        let tree = document.topicTree()
+        guard !tree.isEmpty else {
             throw IThoughtsImportError.emptyMap
         }
 
-        return convertToCanvasNodes(parsedRoots)
+        var builder = ImportBuilder(document: document)
+        for (index, topic) in tree.enumerated() {
+            // Top-level positions are canvas coordinates, i.e. relative to (0, 0).
+            builder.add(topic, parentID: nil, depth: 0, sortIndex: Double(index), parentCenter: .zero)
+        }
+        builder.addSummaries(in: tree, parentID: nil)
+        builder.moveIntoPositiveSpace()
+        builder.report.relationshipCount = document.relationships.count
+
+        guard !builder.nodes.isEmpty else {
+            throw IThoughtsImportError.emptyMap
+        }
+        return IThoughtsImportResult(
+            nodes: builder.nodes,
+            connections: builder.connections,
+            rootNodeIDs: builder.rootNodeIDs,
+            summaries: builder.summaries,
+            report: builder.report
+        )
     }
 
-    private static func unzipITMZ(at sourceURL: URL, to destinationURL: URL) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        process.arguments = ["-x", "-k", sourceURL.path, destinationURL.path]
+    // MARK: Mapping helpers
 
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            print("iThoughts import: failed to launch ditto: \(error).")
-            throw IThoughtsImportError.unzipFailed
+    /// Rough size of a topic box. iThoughts does not store heights, so this is an estimate
+    /// based on text length (CJK characters count double) and the stored text width.
+    static func estimatedSize(text: String, textWidth: Double?) -> CGSize {
+        // Tuned against 195 real maps: typical iThoughts sibling spacing is 44-50 pt,
+        // so a single-line topic must stay under ~40 pt to avoid overlaps.
+        let characterWidth: CGFloat = 7
+        let lineHeight: CGFloat = 16
+        let horizontalPadding: CGFloat = 24
+        let verticalPadding: CGFloat = 14
+        let minimumHeight: CGFloat = 34
+        let maximumAutoWidth: CGFloat = 260
+
+        let lineUnits = text.split(separator: "\n", omittingEmptySubsequences: false).map { displayUnits($0) }
+        let longest = CGFloat(lineUnits.max() ?? 0)
+
+        let width: CGFloat
+        if let textWidth, textWidth > 0 {
+            width = min(max(CGFloat(textWidth) + horizontalPadding, 120), 520)
+        } else {
+            width = min(max(longest * characterWidth + horizontalPadding, 120), maximumAutoWidth)
         }
+        let usableWidth = max(width - horizontalPadding, 1)
+        let lineCount = lineUnits.reduce(0) { total, units in
+            total + max(1, Int((CGFloat(units) * characterWidth / usableWidth).rounded(.up)))
+        }
+        let height = max(minimumHeight, CGFloat(lineCount) * lineHeight + verticalPadding)
+        return CGSize(width: width.rounded(), height: height.rounded())
+    }
 
-        guard process.terminationStatus == 0 else {
-            print("iThoughts import: ditto exited with status \(process.terminationStatus).")
-            throw IThoughtsImportError.unzipFailed
+    private static func displayUnits(_ line: Substring) -> Int {
+        line.unicodeScalars.reduce(0) { total, scalar in
+            total + (scalar.value >= 0x2E80 ? 2 : 1)
         }
     }
 
-    private static func findMapDataXML(in directoryURL: URL) throws -> URL {
-        guard let enumerator = FileManager.default.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            throw IThoughtsImportError.missingXML
+    /// iThoughts icon name -> closest MyThoughts marker (nil = no equivalent).
+    static func marker(forIcon name: String) -> NodeMarker? {
+        switch name {
+        case "idea":
+            return .idea
+        case "tick", "icon-green-tick":
+            return .done
+        case "tickbox":
+            return .task
+        case "alert", "icon-exclamationmark", "sign-stop", "sign-forbidden", "icon-alarm":
+            return .warning
+        case "question", "icon-questionmark":
+            return .question
+        case "icon-star":
+            return .star
+        default:
+            if name.contains("signal-flag") {
+                return .flag
+            }
+            if name.count == 2, name.hasPrefix("p"), name.last?.isNumber == true {
+                return .priority
+            }
+            return nil
+        }
+    }
+
+    /// iThoughts priority 1 (highest) ... 9 (lowest). Inferred: only "2" occurs in the samples.
+    static func priority(from value: String?) -> TaskPriority {
+        guard let value, let number = Int(value) else {
+            return .none
+        }
+        switch number {
+        case 1...3:
+            return .high
+        case 4...6:
+            return .medium
+        case 7...9:
+            return .low
+        default:
+            return .none
+        }
+    }
+
+    /// "3.00h" -> 3. Negative values mean "not set" in iThoughts.
+    static func effort(from value: String?) -> Double {
+        guard let value else {
+            return 0
+        }
+        let numeric = value.prefix { $0.isNumber || $0 == "." || $0 == "-" }
+        return max(0, Double(numeric) ?? 0)
+    }
+}
+
+// MARK: - Builder
+
+private struct ImportBuilder {
+    let document: ItmzDocument
+    var nodes: [CanvasNode] = []
+    var connections: [CanvasConnection] = []
+    var rootNodeIDs: [CanvasNode.ID] = []
+    var summaries: [CanvasSummary] = []
+    var report = IThoughtsImportReport()
+
+    private var idsByUUID: [String: UUID] = [:]
+    private var usedIDs = Set<UUID>()
+
+    init(document: ItmzDocument) {
+        self.document = document
+    }
+
+    mutating func add(_ topic: ItmzTopicNode, parentID: UUID?, depth: Int, sortIndex: Double, parentCenter: CGPoint) {
+        let attributes = topic.attributes
+        let offset = ItmzFormat.parsePosition(attributes["position"])
+        let center = CGPoint(x: parentCenter.x + CGFloat(offset.x), y: parentCenter.y + CGFloat(offset.y))
+
+        // Floating topics are free-standing in iThoughts (no line to the parent).
+        let isFloating = parentID != nil && attributes["floating"] == "1"
+        let effectiveParentID: UUID? = isFloating ? nil : parentID
+
+        let id = makeID(for: attributes["uuid"])
+        let text = (attributes["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasImage = document.imagePath(forTopicAttributes: attributes) != nil
+        let title = text.isEmpty ? (hasImage ? "Image" : "Untitled") : text
+        let size = IThoughtsImportService.estimatedSize(text: title, textWidth: attributes["text-width"].flatMap(Double.init))
+
+        var links: [NodeLink] = []
+        if let link = attributes["link"]?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty {
+            links.append(NodeLink(title: link, urlString: ItmzLinks.normalize(link)))
         }
 
-        var xmlCandidates: [URL] = []
-
-        for case let fileURL as URL in enumerator {
-            guard (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+        var marker: NodeMarker = .none
+        var hadIcon = false
+        for key in ["icon1", "icon2"] {
+            guard let icon = attributes[key], !icon.isEmpty else {
                 continue
             }
-
-            let lowerName = fileURL.lastPathComponent.lowercased()
-            if lowerName == "mapdata.xml" {
-                return fileURL
-            }
-
-            if fileURL.pathExtension.lowercased() == "xml" {
-                xmlCandidates.append(fileURL)
+            hadIcon = true
+            if marker == .none, let mapped = IThoughtsImportService.marker(forIcon: icon) {
+                marker = mapped
             }
         }
-
-        if let likelyMapXML = xmlCandidates.first(where: {
-            $0.lastPathComponent.lowercased().contains("map")
-        }) {
-            return likelyMapXML
+        if hadIcon && marker == .none {
+            report.unmappedIconCount += 1
         }
 
-        guard let firstXML = xmlCandidates.first else {
-            throw IThoughtsImportError.missingXML
-        }
+        let rawProgress = attributes["task-progress"].flatMap(Double.init) ?? 0
+        let isCompleted = rawProgress > 100
+        let completedAt = isCompleted ? (ItmzFormat.date(fromTimestamp: attributes["modified"]) ?? Date()) : nil
 
-        return firstXML
-    }
-
-    private static func parseIThoughtsXML(at xmlURL: URL) throws -> [ParsedIThoughtsTopic] {
-        guard let parser = XMLParser(contentsOf: xmlURL) else {
-            throw IThoughtsImportError.unreadableXML
-        }
-
-        let delegate = IThoughtsXMLParserDelegate()
-        parser.delegate = delegate
-
-        guard parser.parse() else {
-            print("iThoughts import: XML parse failed: \(parser.parserError?.localizedDescription ?? "Unknown error").")
-            throw IThoughtsImportError.unreadableXML
-        }
-
-        guard delegate.didRecognizeTopicStructure else {
-            throw IThoughtsImportError.unsupportedStructure
-        }
-
-        return delegate.rootTopics
-    }
-
-    private static func convertToCanvasNodes(_ rootTopics: [ParsedIThoughtsTopic]) -> IThoughtsImportResult {
-        var nodes: [CanvasNode] = []
-        var connections: [CanvasConnection] = []
-        var rootNodeIDs: [CanvasNode.ID] = []
-        var leafIndex = 0
-
-        for (rootIndex, rootTopic) in rootTopics.enumerated() {
-            let rootID = appendTopic(
-                rootTopic,
-                parentID: nil,
-                depth: 0,
-                sortIndex: Double(rootIndex),
-                leafIndex: &leafIndex,
-                nodes: &nodes,
-                connections: &connections
-            )
-            rootNodeIDs.append(rootID)
-        }
-
-        return IThoughtsImportResult(
-            nodes: nodes,
-            connections: connections,
-            rootNodeIDs: rootNodeIDs
+        let node = CanvasNode(
+            id: id,
+            title: title,
+            body: attributes["note"] ?? "",
+            progress: Int(min(max(rawProgress, 0), 100)),
+            cost: attributes["cost"].flatMap(Double.init) ?? 0,
+            effort: IThoughtsImportService.effort(from: attributes["task-effort"]),
+            startDate: ItmzFormat.date(fromTimestamp: attributes["task-start"]),
+            dueDate: ItmzFormat.date(fromTimestamp: attributes["task-due"]),
+            priority: IThoughtsImportService.priority(from: attributes["task-priority"]),
+            completedAt: completedAt,
+            rollupEnabled: attributes["cost-type"] == "2",
+            marker: marker,
+            links: links,
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height,
+            sortIndex: effectiveParentID == nil && parentID != nil ? Double(rootNodeIDs.count) : sortIndex,
+            parentID: effectiveParentID,
+            isCollapsed: attributes["folded"] == "1"
         )
-    }
+        nodes.append(node)
 
-    @discardableResult
-    private static func appendTopic(
-        _ topic: ParsedIThoughtsTopic,
-        parentID: CanvasNode.ID?,
-        depth: Int,
-        sortIndex: Double,
-        leafIndex: inout Int,
-        nodes: inout [CanvasNode],
-        connections: inout [CanvasConnection]
-    ) -> CanvasNode.ID {
-        let nodeID = UUID()
-        let childStartIndex = nodes.count
-        let title = topic.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = topic.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let links = topic.links
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .uniqued()
-            .map { NodeLink(title: $0, urlString: $0) }
-
-        nodes.append(
-            CanvasNode(
-                id: nodeID,
-                title: title.isEmpty ? "Untitled" : title,
-                body: body,
-                links: links,
-                attachmentLinks: links.map(\.urlString),
-                x: CGFloat(depth) * horizontalSpacing,
-                y: CGFloat(leafIndex) * verticalSpacing,
-                width: defaultNodeSize.width,
-                height: defaultNodeSize.height,
-                sortIndex: sortIndex,
-                parentID: parentID,
-                isCollapsed: false
-            )
-        )
-
-        if let parentID {
-            connections.append(
-                CanvasConnection(
-                    id: UUID(),
-                    fromNodeID: parentID,
-                    toNodeID: nodeID,
-                    type: "parentChild"
-                )
-            )
-        }
-
-        if topic.children.isEmpty {
-            leafIndex += 1
+        if let effectiveParentID {
+            connections.append(CanvasConnection(id: UUID(), fromNodeID: effectiveParentID, toNodeID: id, type: "parentChild"))
         } else {
-            let startingLeafIndex = leafIndex
-            for (childIndex, childTopic) in topic.children.enumerated() {
-                appendTopic(
-                    childTopic,
-                    parentID: nodeID,
-                    depth: depth + 1,
-                    sortIndex: Double(childIndex),
-                    leafIndex: &leafIndex,
-                    nodes: &nodes,
-                    connections: &connections
-                )
-            }
-
-            let endingLeafIndex = max(startingLeafIndex, leafIndex - 1)
-            let centerY = CGFloat(startingLeafIndex + endingLeafIndex) * verticalSpacing / 2
-            if let nodeIndex = nodes.firstIndex(where: { $0.id == nodeID }) {
-                nodes[nodeIndex].y = centerY
-            }
-
-            for childOffset in childStartIndex..<nodes.count where nodes[childOffset].parentID == nodeID {
-                nodes[childOffset].sortIndex = Double(childOffset - childStartIndex)
-            }
+            rootNodeIDs.append(id)
         }
 
-        return nodeID
-    }
-}
-
-private final class ParsedIThoughtsTopic {
-    var title: String
-    var body: String
-    var links: [String]
-    var children: [ParsedIThoughtsTopic]
-
-    init(title: String = "", body: String = "", links: [String] = []) {
-        self.title = title
-        self.body = body
-        self.links = links
-        self.children = []
-    }
-}
-
-private final class IThoughtsXMLParserDelegate: NSObject, XMLParserDelegate {
-    enum CaptureKind {
-        case title
-        case note
-        case link
-    }
-
-    struct TextCapture {
-        var kind: CaptureKind
-        weak var topic: ParsedIThoughtsTopic?
-        var elementName: String
-    }
-
-    private(set) var rootTopics: [ParsedIThoughtsTopic] = []
-    private(set) var didRecognizeTopicStructure = false
-
-    private var topicStack: [ParsedIThoughtsTopic] = []
-    private var textCapture: TextCapture?
-    private var textBuffer = ""
-
-    func parser(
-        _ parser: XMLParser,
-        didStartElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?,
-        attributes attributeDict: [String: String] = [:]
-    ) {
-        let lowerName = elementName.lowercased()
-
-        if isTopicElement(lowerName, attributes: attributeDict) {
-            didRecognizeTopicStructure = true
-
-            let topic = ParsedIThoughtsTopic(
-                title: firstAttributeValue(in: attributeDict, matching: titleAttributeNames),
-                body: firstAttributeValue(in: attributeDict, matching: noteAttributeNames),
-                links: links(in: attributeDict.values)
-            )
-
-            if let parent = topicStack.last {
-                parent.children.append(topic)
-            } else {
-                rootTopics.append(topic)
-            }
-
-            topicStack.append(topic)
-            return
+        report.topicCount += 1
+        if isFloating {
+            report.floatingTopicCount += 1
+        }
+        if hasImage {
+            report.imageCount += 1
+        }
+        if let color = attributes["color"], !color.isEmpty {
+            report.coloredTopicCount += 1
         }
 
-        guard let currentTopic = topicStack.last else {
-            return
-        }
-
-        currentTopic.links.append(contentsOf: links(in: attributeDict.values))
-
-        if isTitleElement(lowerName) {
-            beginTextCapture(.title, topic: currentTopic, elementName: lowerName)
-        } else if isNoteElement(lowerName) {
-            beginTextCapture(.note, topic: currentTopic, elementName: lowerName)
-        } else if isLinkElement(lowerName) {
-            beginTextCapture(.link, topic: currentTopic, elementName: lowerName)
+        for (index, child) in topic.children.enumerated() {
+            add(child, parentID: id, depth: depth + 1, sortIndex: Double(index), parentCenter: center)
         }
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
-        guard textCapture != nil else {
-            return
-        }
-
-        textBuffer += string
-    }
-
-    func parser(
-        _ parser: XMLParser,
-        didEndElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?
-    ) {
-        let lowerName = elementName.lowercased()
-
-        if let capture = textCapture,
-           capture.elementName == lowerName {
-            applyCapturedText(capture)
-            textCapture = nil
-            textBuffer = ""
-        }
-
-        if isTopicElementName(lowerName), !topicStack.isEmpty {
-            topicStack.removeLast()
-        }
-    }
-
-    private func beginTextCapture(_ kind: CaptureKind, topic: ParsedIThoughtsTopic, elementName: String) {
-        textCapture = TextCapture(kind: kind, topic: topic, elementName: elementName)
-        textBuffer = ""
-    }
-
-    private func applyCapturedText(_ capture: TextCapture) {
-        let text = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let topic = capture.topic else {
-            return
-        }
-
-        switch capture.kind {
-        case .title:
-            if topic.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                topic.title = text
-            }
-        case .note:
-            if topic.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                topic.body = text
-            } else {
-                topic.body += "\n\n\(text)"
-            }
-        case .link:
-            topic.links.append(contentsOf: links(in: [text]))
-        }
-    }
-
-    private func isTopicElement(_ lowerName: String, attributes: [String: String]) -> Bool {
-        if isTopicElementName(lowerName) {
-            return true
-        }
-
-        if lowerName.contains("topic") {
-            return attributes.keys.contains { key in
-                titleAttributeNames.contains(key.lowercased()) ||
-                key.lowercased().contains("text") ||
-                key.lowercased().contains("title")
-            }
-        }
-
-        return false
-    }
-
-    private func isTopicElementName(_ lowerName: String) -> Bool {
-        ["topic", "node", "item"].contains(lowerName)
-    }
-
-    private func isTitleElement(_ lowerName: String) -> Bool {
-        ["title", "text", "label", "name"].contains(lowerName) ||
-        lowerName.hasSuffix("title") ||
-        lowerName.hasSuffix("text")
-    }
-
-    private func isNoteElement(_ lowerName: String) -> Bool {
-        ["note", "notes", "comment", "body"].contains(lowerName) ||
-        lowerName.contains("note")
-    }
-
-    private func isLinkElement(_ lowerName: String) -> Bool {
-        ["link", "url", "hyperlink"].contains(lowerName) ||
-        lowerName.contains("link") ||
-        lowerName.contains("url")
-    }
-
-    private var titleAttributeNames: Set<String> {
-        ["text", "title", "name", "label", "topic", "content"]
-    }
-
-    private var noteAttributeNames: Set<String> {
-        ["note", "notes", "comment", "body"]
-    }
-
-    private func firstAttributeValue(in attributes: [String: String], matching names: Set<String>) -> String {
-        for (key, value) in attributes {
-            let lowerKey = key.lowercased()
-            if names.contains(lowerKey) || names.contains(where: { lowerKey.hasSuffix($0) }) {
-                return value
-            }
-        }
-
-        return ""
-    }
-
-    private func links(in values: Dictionary<String, String>.Values) -> [String] {
-        links(in: Array(values))
-    }
-
-    private func links(in values: [String]) -> [String] {
-        values.flatMap { value in
-            value
-                .components(separatedBy: .whitespacesAndNewlines)
-                .map { token in
-                    token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>(),;"))
+    /// iThoughts summary topics carry `summary1`/`summary2`: the first and last sibling they bracket.
+    mutating func addSummaries(in topics: [ItmzTopicNode], parentID: UUID?) {
+        let siblingKeys = topics.map { $0.uuid.lowercased() }
+        for (index, topic) in topics.enumerated() {
+            if let first = topic.attributes["summary1"]?.lowercased(),
+               let last = topic.attributes["summary2"]?.lowercased(),
+               let summaryNodeID = id(for: topic.uuid),
+               let start = siblingKeys.firstIndex(of: first),
+               let end = siblingKeys.firstIndex(of: last) {
+                let ownKey = topic.uuid.lowercased()
+                let summarized = (min(start, end)...max(start, end))
+                    .map { topics[$0] }
+                    .filter { $0.uuid.lowercased() != ownKey }
+                    .compactMap { id(for: $0.uuid) }
+                if summarized.count >= 2 {
+                    summaries.append(CanvasSummary(
+                        parentID: parentID,
+                        summarizedNodeIDs: summarized,
+                        summaryNodeID: summaryNodeID,
+                        sortIndex: index
+                    ))
+                    report.summaryCount += 1
                 }
-                .filter { token in
-                    token.lowercased().hasPrefix("http://") ||
-                    token.lowercased().hasPrefix("https://")
-                }
+            }
+            addSummaries(in: topic.children, parentID: id(for: topic.uuid))
         }
     }
-}
 
-private extension Array where Element: Hashable {
-    func uniqued() -> [Element] {
-        var seen: Set<Element> = []
-        return filter { seen.insert($0).inserted }
+    /// iThoughts maps are centred on (0, 0); shift everything so it starts at a small margin.
+    mutating func moveIntoPositiveSpace() {
+        guard let minX = nodes.map(\.x).min(), let minY = nodes.map(\.y).min() else {
+            return
+        }
+        let margin: CGFloat = 80
+        let dx = margin - minX
+        let dy = margin - minY
+        for index in nodes.indices {
+            nodes[index].x += dx
+            nodes[index].y += dy
+        }
+    }
+
+    /// Keeps the iThoughts UUID as the node ID when possible (needed later for saving back to .itmz).
+    private mutating func makeID(for uuid: String?) -> UUID {
+        var id = uuid.flatMap { UUID(uuidString: $0) } ?? UUID()
+        if usedIDs.contains(id) {
+            id = UUID()
+        }
+        usedIDs.insert(id)
+        if let uuid {
+            idsByUUID[uuid.lowercased()] = id
+        }
+        return id
+    }
+
+    private func id(for uuid: String) -> UUID? {
+        idsByUUID[uuid.lowercased()]
     }
 }

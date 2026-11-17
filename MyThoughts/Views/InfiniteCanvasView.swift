@@ -1850,13 +1850,14 @@ struct InfiniteCanvasView: View {
         pendingIThoughtsImportResult = nil
         let repairResult = MapValidator.repair(
             nodes: importResult.nodes,
-            connections: importResult.connections
+            connections: importResult.connections,
+            summaries: importResult.summaries
         )
 
         recordUndoSnapshot()
         nodes = repairResult.nodes
         connections = repairResult.connections
-        summaries = []
+        summaries = repairResult.summaries
         documentCreatedAt = Date()
 
         clearSelection()
@@ -1886,11 +1887,12 @@ struct InfiniteCanvasView: View {
         saveNodes()
         hasCenteredInitialContent = true
 
+        let importNotes = importResult.report.notImportedDescription.map { "\n\n\($0)" } ?? ""
         if repairResult.actions.isEmpty && repairResult.validationReport.isValid {
-            showStatusMessage("Imported iThoughts map.")
+            showStatusMessage("Imported iThoughts map (\(importResult.report.topicCount) topics).\(importNotes)")
         } else if repairResult.validationReport.isValid {
             print("iThoughts import repair:\n\(repairResult.summary)")
-            showStatusMessage("Imported and repaired iThoughts map.\n\n\(repairResult.summary)")
+            showStatusMessage("Imported and repaired iThoughts map.\n\n\(repairResult.summary)\(importNotes)")
         } else {
             let message = "Imported iThoughts map with remaining validation issues.\n\n\(repairResult.validationReport.summary)"
             print("iThoughts import validation:\n\(message)")

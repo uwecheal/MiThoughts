@@ -26,6 +26,10 @@
 		1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */; };
 		1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */; };
 		1A0000372C17500000000001 /* CanvasSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000382C17500000000001 /* CanvasSummary.swift */; };
+		1A0001012C17500000000001 /* ItmzZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001022C17500000000001 /* ItmzZip.swift */; };
+		1A0001032C17500000000001 /* ItmzXML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001042C17500000000001 /* ItmzXML.swift */; };
+		1A0001052C17500000000001 /* ItmzDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001062C17500000000001 /* ItmzDocument.swift */; };
+		1A0001072C17500000000001 /* ItmzLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001082C17500000000001 /* ItmzLinks.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +53,10 @@
 		1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsDocumentData.swift; sourceTree = "<group>"; };
 		1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLinePathBuilder.swift; sourceTree = "<group>"; };
 		1A0000382C17500000000001 /* CanvasSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSummary.swift; sourceTree = "<group>"; };
+		1A0001022C17500000000001 /* ItmzZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzZip.swift; sourceTree = "<group>"; };
+		1A0001042C17500000000001 /* ItmzXML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzXML.swift; sourceTree = "<group>"; };
+		1A0001062C17500000000001 /* ItmzDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzDocument.swift; sourceTree = "<group>"; };
+		1A0001082C17500000000001 /* ItmzLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzLinks.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -66,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000082C17500000000001 /* MyThoughts */,
+				1A0001092C17500000000001 /* ItmzKit */,
 				1A0000092C17500000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -126,6 +135,18 @@
 				1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		1A0001092C17500000000001 /* ItmzKit */ = {
+			isa = PBXGroup;
+			children = (
+				1A0001022C17500000000001 /* ItmzZip.swift */,
+				1A0001042C17500000000001 /* ItmzXML.swift */,
+				1A0001062C17500000000001 /* ItmzDocument.swift */,
+				1A0001082C17500000000001 /* ItmzLinks.swift */,
+			);
+			name = ItmzKit;
+			path = ItmzKit/Sources/ItmzKit;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -215,6 +236,10 @@
 				1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */,
 				1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */,
 				1A0000372C17500000000001 /* CanvasSummary.swift in Sources */,
+				1A0001012C17500000000001 /* ItmzZip.swift in Sources */,
+				1A0001032C17500000000001 /* ItmzXML.swift in Sources */,
+				1A0001052C17500000000001 /* ItmzDocument.swift in Sources */,
+				1A0001072C17500000000001 /* ItmzLinks.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
