@@ -7,6 +7,7 @@ enum MyThoughtsDocumentService {
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
+        relationships: [CanvasRelationship] = [],
         canvasSettings: CanvasAppearance,
         notePanelSettings: NotePanelSettings,
         documentType: MyThoughtsDocumentType = .fullMap,
@@ -20,6 +21,7 @@ enum MyThoughtsDocumentService {
             nodes: nodes,
             connections: connections,
             summaries: summaries,
+            relationships: relationships,
             canvasSettings: canvasSettings,
             notePanelSettings: notePanelSettings,
             metadata: metadata
@@ -30,6 +32,7 @@ enum MyThoughtsDocumentService {
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
+        relationships: [CanvasRelationship] = [],
         canvasSettings: CanvasAppearance,
         notePanelSettings: NotePanelSettings,
         documentType: MyThoughtsDocumentType = .fullMap,
@@ -41,6 +44,7 @@ enum MyThoughtsDocumentService {
             nodes: nodes,
             connections: connections,
             summaries: summaries,
+            relationships: relationships,
             canvasSettings: canvasSettings,
             notePanelSettings: notePanelSettings,
             documentType: documentType,
@@ -85,10 +89,16 @@ enum MyThoughtsFileCommand {
     static let exportPDF = Notification.Name("MyThoughtsFileCommand.exportPDF")
     static let exportPNG = Notification.Name("MyThoughtsFileCommand.exportPNG")
     static let printMap = Notification.Name("MyThoughtsFileCommand.printMap")
+    static let exportITMZ = Notification.Name("MyThoughtsFileCommand.exportITMZ")
+    static let importITMZ = Notification.Name("MyThoughtsFileCommand.importITMZ")
+    /// object: OutlineFormat.rawValue
+    static let exportOutline = Notification.Name("MyThoughtsFileCommand.exportOutline")
+    static let openURL = Notification.Name("MyThoughtsFileCommand.openURL")
 }
 
 enum MyThoughtsViewCommand {
     static let toggleOutline = Notification.Name("MyThoughtsViewCommand.toggleOutline")
+    static let addRelationship = Notification.Name("MyThoughtsViewCommand.addRelationship")
 }
 
 enum BranchOperation {
@@ -190,6 +200,7 @@ enum NodeStore {
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
+        relationships: [CanvasRelationship] = [],
         canvasSettings: CanvasAppearance = CanvasAppearance(),
         notePanelSettings: NotePanelSettings = NotePanelSettings(),
         createdAt: Date = Date()
@@ -199,6 +210,7 @@ enum NodeStore {
                 nodes: nodes,
                 connections: connections,
                 summaries: summaries,
+                relationships: relationships,
                 canvasSettings: canvasSettings,
                 notePanelSettings: notePanelSettings,
                 createdAt: createdAt

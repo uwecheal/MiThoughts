@@ -8,6 +8,8 @@ struct MapExportPayload {
     var appearance: CanvasAppearance
     var colorScheme: ColorScheme
     var displayedProgressByNodeID: [CanvasNode.ID: Int]
+    var relationships: [CanvasRelationship] = []
+    var effectiveColorHexByNodeID: [CanvasNode.ID: String] = [:]
 }
 
 struct MapExportResult {
@@ -176,16 +178,25 @@ private struct MapExportContentView: View {
                 ExportQuadrantView(appearance: payload.appearance, bounds: bounds, colors: colors)
             }
 
+            BoundaryLayerView(items: boundaryItems)
+
             ExportConnectionView(payload: payload, bounds: bounds, colors: colors)
 
             ExportSummaryView(payload: payload, bounds: bounds, colors: colors)
+
+            RelationshipLayerView(
+                items: relationshipItems,
+                lineWidth: payload.appearance.connectionLineThickness.width,
+                labelBackground: payload.appearance.backgroundColor(for: payload.colorScheme)
+            )
 
             ForEach(payload.nodes) { node in
                 ExportNodeView(
                     node: node,
                     appearance: payload.appearance,
                     colors: colors,
-                    displayedProgress: payload.displayedProgressByNodeID[node.id] ?? node.progress
+                    displayedProgress: payload.displayedProgressByNodeID[node.id] ?? node.progress,
+                    fillHex: payload.effectiveColorHexByNodeID[node.id]
                 )
                 .position(
                     x: node.x - bounds.minX + node.width / 2,
@@ -195,6 +206,52 @@ private struct MapExportContentView: View {
         }
         .frame(width: bounds.width, height: bounds.height)
         .clipped()
+    }
+
+    private func localRect(_ node: CanvasNode) -> CGRect {
+        CGRect(x: node.x - bounds.minX, y: node.y - bounds.minY, width: node.width, height: node.height)
+    }
+
+    private var relationshipItems: [RelationshipRenderItem] {
+        let nodesByID = Dictionary(payload.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return payload.relationships.compactMap { relationship in
+            guard let from = nodesByID[relationship.fromNodeID], let to = nodesByID[relationship.toNodeID] else {
+                return nil
+            }
+            return RelationshipRenderItem(
+                id: relationship.id,
+                fromRect: localRect(from),
+                toRect: localRect(to),
+                lineStyle: relationship.lineStyle,
+                startStyle: relationship.startStyle,
+                endStyle: relationship.endStyle,
+                isDashed: relationship.isDashed,
+                color: TopicColor.color(relationship.colorHex) ?? colors.connection,
+                label: relationship.label
+            )
+        }
+    }
+
+    private var boundaryItems: [BoundaryRenderItem] {
+        let nodesByID = Dictionary(payload.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let children = Dictionary(grouping: payload.nodes.filter { $0.parentID != nil }) { $0.parentID! }
+        return payload.nodes.filter(\.style.hasBoundary).map { node in
+            var rect = localRect(node)
+            var stack = children[node.id] ?? []
+            var visited: Set<CanvasNode.ID> = [node.id]
+            while let child = stack.popLast() {
+                guard !visited.contains(child.id), nodesByID[child.id] != nil else {
+                    continue
+                }
+                visited.insert(child.id)
+                rect = rect.union(localRect(child))
+                stack.append(contentsOf: children[child.id] ?? [])
+            }
+            return BoundaryRenderItem(
+                rect: rect.insetBy(dx: -10, dy: -10),
+                color: TopicColor.color(payload.effectiveColorHexByNodeID[node.id]) ?? colors.connection
+            )
+        }
     }
 }
 
@@ -312,27 +369,29 @@ private struct ExportConnectionView: View {
         let nodesByID = Dictionary(payload.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         Canvas { context, _ in
-            var path = Path()
+            let grouped = Dictionary(grouping: payload.connections) { payload.effectiveColorHexByNodeID[$0.toNodeID] }
+            for (colorHex, connections) in grouped {
+                var path = Path()
+                for connection in connections {
+                    guard let fromNode = nodesByID[connection.fromNodeID],
+                          let toNode = nodesByID[connection.toNodeID] else {
+                        continue
+                    }
 
-            for connection in payload.connections {
-                guard let fromNode = nodesByID[connection.fromNodeID],
-                      let toNode = nodesByID[connection.toNodeID] else {
-                    continue
+                    ConnectionLinePathBuilder.addConnection(
+                        from: localConnectionStart(from: fromNode, to: toNode),
+                        to: localConnectionEnd(from: fromNode, to: toNode),
+                        style: payload.appearance.connectionLineStyle,
+                        to: &path
+                    )
                 }
 
-                ConnectionLinePathBuilder.addConnection(
-                    from: localConnectionStart(from: fromNode, to: toNode),
-                    to: localConnectionEnd(from: fromNode, to: toNode),
-                    style: payload.appearance.connectionLineStyle,
-                    to: &path
+                context.stroke(
+                    path,
+                    with: .color(TopicColor.color(colorHex) ?? colors.connection),
+                    lineWidth: payload.appearance.connectionLineThickness.width
                 )
             }
-
-            context.stroke(
-                path,
-                with: .color(colors.connection),
-                lineWidth: payload.appearance.connectionLineThickness.width
-            )
         }
     }
 
@@ -414,6 +473,35 @@ private struct ExportNodeView: View {
     let appearance: CanvasAppearance
     let colors: CanvasThemeColors
     let displayedProgress: Int
+    var fillHex: String? = nil
+
+    private var shape: TopicShape {
+        node.style.shape ?? appearance.nodeStyle.topicShape
+    }
+
+    private var textColor: Color {
+        if let fillHex, shape.isFilled {
+            return TopicColor.textColor(onFill: fillHex)
+        }
+        return colors.nodeText
+    }
+
+    private var image: NSImage? {
+        node.style.imageData.flatMap { NSImage(data: $0) }
+    }
+
+    private var imageSize: CGSize {
+        guard let image, image.size.width > 0 else {
+            return .zero
+        }
+        let preferred = node.style.imageWidth.map { CGFloat($0) } ?? min(image.size.width, 240)
+        let width = min(preferred, max(node.width - 16, 16))
+        let height = width * image.size.height / image.size.width
+        let maximumHeight = max(node.height - (node.title.isEmpty ? 12 : 30), 12)
+        return height > maximumHeight
+            ? CGSize(width: maximumHeight * image.size.width / image.size.height, height: maximumHeight)
+            : CGSize(width: width, height: height)
+    }
 
     private var cornerRadius: CGFloat {
         switch appearance.nodeStyle {
@@ -432,15 +520,28 @@ private struct ExportNodeView: View {
 
     var body: some View {
         ZStack {
-            background
-            border
+            TopicBoxBackground(
+                shape: shape,
+                fill: TopicColor.color(fillHex) ?? colors.nodeBackground,
+                stroke: fillHex.map { shape.isFilled ? TopicColor.borderColor(forFill: $0) : (TopicColor.color($0) ?? colors.nodeBorder) } ?? colors.nodeBorder,
+                lineWidth: 1,
+                shadow: showsShadow ? colors.shadow : nil,
+                cornerRadius: cornerRadius
+            )
 
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: imageSize.width, height: imageSize.height)
+                }
+
                 HStack(spacing: 6) {
                     if let systemImageName = node.marker.systemImageName {
                         Image(systemName: systemImageName)
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(colors.nodeText.opacity(0.62))
+                            .foregroundStyle(textColor.opacity(0.62))
                             .imageScale(.small)
                     }
 
@@ -451,11 +552,14 @@ private struct ExportNodeView: View {
                             .imageScale(.small)
                     }
 
-                    Text(displayTitle)
-                        .font(appearance.nodeFontSize.font)
-                        .foregroundStyle(colors.nodeText)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
+                    if !(node.title.isEmpty && image != nil) {
+                        Text(TopicText.attributed(displayTitle))
+                            .font(node.style.textSize.map { .system(size: CGFloat($0) * 13 / 14) } ?? appearance.nodeFontSize.font)
+                            .foregroundStyle(textColor)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(max(1, Int((node.height - imageSize.height - 8) / 16)))
+                            .frame(maxWidth: .infinity)
+                    }
                 }
 
                 if hasTaskIndicatorRow {
@@ -475,49 +579,13 @@ private struct ExportNodeView: View {
                         }
                     }
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(colors.nodeText.opacity(0.58))
+                    .foregroundStyle(textColor.opacity(0.58))
                     .lineLimit(1)
                 }
             }
             .padding(.horizontal, 10)
         }
         .frame(width: node.width, height: node.height)
-    }
-
-    @ViewBuilder
-    private var background: some View {
-        switch appearance.nodeStyle {
-        case .roundedRectangle:
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(colors.nodeBackground)
-                .shadow(color: showsShadow ? colors.shadow : .clear, radius: 4, y: 2)
-        case .capsule:
-            Capsule()
-                .fill(colors.nodeBackground)
-                .shadow(color: showsShadow ? colors.shadow : .clear, radius: 4, y: 2)
-        case .minimalUnderline:
-            Rectangle()
-                .fill(Color.clear)
-        }
-    }
-
-    @ViewBuilder
-    private var border: some View {
-        switch appearance.nodeStyle {
-        case .roundedRectangle:
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(colors.nodeBorder, lineWidth: 1)
-        case .capsule:
-            Capsule()
-                .stroke(colors.nodeBorder, lineWidth: 1)
-        case .minimalUnderline:
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(colors.nodeBorder)
-                    .frame(height: 1)
-            }
-        }
     }
 
     private var displayTitle: String {

@@ -1,11 +1,37 @@
 import SwiftUI
 
+/// Files opened from Finder (double-click, "Open With", drag onto the Dock icon) wait here
+/// until the canvas takes them, so a file that arrives during launch is never lost.
+enum ExternalOpenQueue {
+    private(set) static var pending: [URL] = []
+
+    static func enqueue(_ url: URL) {
+        pending.append(url)
+        NotificationCenter.default.post(name: MyThoughtsFileCommand.openURL, object: nil)
+    }
+
+    /// The most recent request (older ones are superseded), or nil.
+    static func takeLatest() -> URL? {
+        defer { pending.removeAll() }
+        return pending.last
+    }
+}
+
+final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
+    func application(_ application: NSApplication, open urls: [URL]) {
+        if let url = urls.last {
+            ExternalOpenQueue.enqueue(url)
+        }
+    }
+}
+
 @main
 struct MyThoughtsApp: App {
+    @NSApplicationDelegateAdaptor(MyThoughtsAppDelegate.self) private var appDelegate
     @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
 
     var body: some Scene {
-        WindowGroup {
+        Window("MyThoughts", id: "main") {
             ContentView()
                 .frame(minWidth: 720, minHeight: 480)
         }
@@ -65,6 +91,27 @@ struct MyThoughtsApp: App {
 
                 Divider()
 
+                Button("Import iThoughts (.itmz)...") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.importITMZ, object: nil)
+                }
+
+                Button("Export as iThoughts (.itmz)...") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.exportITMZ, object: nil)
+                }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+
+                Menu("Export Outline") {
+                    Button("Markdown (.md)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.markdown.rawValue)
+                    }
+                    Button("OPML (.opml)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.opml.rawValue)
+                    }
+                    Button("FreeMind / Freeplane (.mm)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.freemind.rawValue)
+                    }
+                }
+
                 Button("Export as PDF...") {
                     NotificationCenter.default.post(name: MyThoughtsFileCommand.exportPDF, object: nil)
                 }
@@ -86,6 +133,36 @@ struct MyThoughtsApp: App {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleOutline, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .option])
+            }
+
+            CommandMenu("Task") {
+                TaskActionMenuItems(showsShortcuts: true) { action in
+                    TaskCommand.post(action)
+                }
+
+                Divider()
+
+                Button("Show Task List") {
+                    NotificationCenter.default.post(name: TaskCommand.toggleTaskList, object: nil)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+
+                Button("Hide/Show Completed Tasks") {
+                    NotificationCenter.default.post(name: TaskCommand.toggleHideCompleted, object: nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command, .control])
+
+                Button("Sync with Reminders & Calendar") {
+                    NotificationCenter.default.post(name: TaskCommand.syncApple, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+            }
+
+            CommandMenu("Insert") {
+                Button("Relationship") {
+                    NotificationCenter.default.post(name: MyThoughtsViewCommand.addRelationship, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
 
             CommandMenu("Branch") {

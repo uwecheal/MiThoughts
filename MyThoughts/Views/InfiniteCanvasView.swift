@@ -10,6 +10,16 @@ struct InfiniteCanvasView: View {
     @State private var nodes: [CanvasNode] = []
     @State private var connections: [CanvasConnection] = []
     @State private var summaries: [CanvasSummary] = []
+    @State private var relationships: [CanvasRelationship] = []
+    /// Set while an .itmz file is open: saving writes back into the original file's DOM.
+    @State private var itmzSession: ItmzEditingSession?
+    /// "Add Relationship" mode: the next clicked topic becomes the other end.
+    @State private var relationshipSourceID: CanvasNode.ID?
+    @State private var selectedRelationshipID: CanvasRelationship.ID?
+    @State private var editingRelationshipID: CanvasRelationship.ID?
+    @State private var isShowingTaskList = false
+    @State private var isSyncingApple = false
+    @State private var lastAppleSyncAt: Date?
     @State private var derivedData: CanvasDerivedData
     @State private var historyManager = HistoryManager()
     @State private var selectedNodeID: CanvasNode.ID?
@@ -76,7 +86,15 @@ struct InfiniteCanvasView: View {
 
         let loadedConnections = document.connections
         let loadedSummaries = Self.cleanedSummaries(document.summaries, validNodeIDs: Set(loadedNodes.map(\.id)))
-        let initialDerivedData = CanvasDerivedData(nodes: loadedNodes, connections: loadedConnections)
+        let loadedNodeIDs = Set(loadedNodes.map(\.id))
+        _relationships = State(initialValue: document.relationships.filter {
+            loadedNodeIDs.contains($0.fromNodeID) && loadedNodeIDs.contains($0.toNodeID)
+        })
+        let initialDerivedData = CanvasDerivedData(
+            nodes: loadedNodes,
+            connections: loadedConnections,
+            hidesCompletedTasks: CanvasAppearance.load().taskDisplay.hideCompletedTasks
+        )
 
         _nodes = State(initialValue: loadedNodes)
         _connections = State(initialValue: loadedConnections)
@@ -144,6 +162,10 @@ struct InfiniteCanvasView: View {
                     searchOverlay
                 }
 
+                if isShowingTaskList {
+                    taskListOverlay
+                }
+
                 if isShowingStartScreen {
                     startScreen
                         .transition(.opacity)
@@ -205,6 +227,29 @@ struct InfiniteCanvasView: View {
                 }
             } message: {
                 Text("MyThoughts will create a one-way Apple Calendar event from this topic.")
+            }
+            .sheet(isPresented: Binding(
+                get: { editingRelationshipID != nil },
+                set: { if !$0 { editingRelationshipID = nil } }
+            )) {
+                if let binding = editingRelationshipBinding {
+                    RelationshipEditorView(
+                        relationship: binding,
+                        fromTitle: relationshipEndTitle(binding.wrappedValue.fromNodeID),
+                        toTitle: relationshipEndTitle(binding.wrappedValue.toNodeID),
+                        onDelete: {
+                            if let id = editingRelationshipID {
+                                deleteRelationship(id)
+                            }
+                            editingRelationshipID = nil
+                        },
+                        onDone: {
+                            editingRelationshipID = nil
+                            saveNodes()
+                            focusCanvas()
+                        }
+                    )
+                }
             }
             .sheet(isPresented: $isShowingTemplateChooser) {
                 TemplateChooserView(
@@ -268,6 +313,28 @@ struct InfiniteCanvasView: View {
             }
         }
         .zIndex(20)
+    }
+
+    private var taskListOverlay: some View {
+        HStack {
+            Spacer()
+            TaskListPanelView(
+                nodes: nodes,
+                isSyncing: isSyncingApple,
+                lastSyncText: lastAppleSyncAt.map { "Last sync " + $0.formatted(date: .omitted, time: .shortened) },
+                onJump: jumpToNode,
+                onToggleDone: { id in applyTaskAction(.toggleDone, to: [id]) },
+                onAddToReminders: addRemindersForTasks,
+                onSync: { syncWithApple(isAutomatic: false) },
+                onClose: { isShowingTaskList = false; focusCanvas() }
+            )
+            .frame(width: 520, height: 560)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            .padding(.trailing, 24)
+        }
+        .zIndex(25)
     }
 
     private var searchOverlay: some View {
@@ -359,12 +426,22 @@ struct InfiniteCanvasView: View {
                     quadrantLayer(in: geometry.size)
                 }
 
+                boundaryLayer(in: geometry.size)
+
                 connectionLayer(in: geometry.size)
 
                 summaryLayer(in: geometry.size)
 
+                relationshipLayer(in: geometry.size)
+
                 ForEach(derivedData.visibleNodes) { node in
                     canvasNodeView(for: binding(for: node.id))
+                }
+
+                if relationshipSourceID != nil {
+                    relationshipModeIndicator
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .top)
                 }
 
                 if showsDebugOverlay {
@@ -392,6 +469,15 @@ struct InfiniteCanvasView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                             }
+
+                            Button {
+                                isShowingTaskList.toggle()
+                            } label: {
+                                Label("Tasks", systemImage: "checklist")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Task list (⌥⌘T)")
 
                             Button("Canvas") {
                                 isShowingAppearancePopover.toggle()
@@ -440,6 +526,9 @@ struct InfiniteCanvasView: View {
                 centerInitialContentIfNeeded(in: geometry.size)
                 isCanvasFocused = true
                 updateWindowTitle()
+                DispatchQueue.main.async {
+                    openPendingExternalFile()
+                }
             }
             .onChange(of: geometry.size) { _, newSize in
                 viewportSize = newSize
@@ -498,6 +587,41 @@ struct InfiniteCanvasView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsViewCommand.toggleOutline)) { _ in
                 toggleOutlineView()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportITMZ)) { _ in
+                exportITMZFile()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportOutline)) { notification in
+                if let raw = notification.object as? String, let format = OutlineFormat(rawValue: raw) {
+                    exportOutlineFile(format)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.importITMZ)) { _ in
+                importIThoughtsFile()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.openURL)) { _ in
+                openPendingExternalFile()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.perform)) { notification in
+                if let action = notification.object as? TaskAction {
+                    applyTaskAction(action, to: selectedNodeIDs.isEmpty ? Set(selectedNodeID.map { [$0] } ?? []) : selectedNodeIDs)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleTaskList)) { _ in
+                isShowingTaskList.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.syncApple)) { _ in
+                syncWithApple(isAutomatic: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleHideCompleted)) { _ in
+                updateAppearance { $0.taskDisplay.hideCompletedTasks.toggle() }
+                refreshDerivedData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                syncWithApple(isAutomatic: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
+                addRelationshipFromSelection()
             }
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsBranchCommand.perform)) { notification in
                 if let operation = notification.object as? BranchOperation {
@@ -567,7 +691,8 @@ struct InfiniteCanvasView: View {
         let updatedDerivedData = CanvasDerivedData(
             nodes: nodes,
             connections: connections,
-            focusedNodeID: activeFocusNodeID
+            focusedNodeID: activeFocusNodeID,
+            hidesCompletedTasks: appearance.taskDisplay.hideCompletedTasks
         )
         derivedData = updatedDerivedData
         outlineItems = Self.buildOutlineItems(
@@ -721,9 +846,15 @@ struct InfiniteCanvasView: View {
             .onEnded { value in
                 let canvasPoint = screenToCanvasPosition(value.location)
 
-                if node(at: canvasPoint) == nil {
-                    createNode(at: canvasPoint)
+                guard node(at: canvasPoint) == nil else {
+                    return
                 }
+                if let relationshipID = relationship(at: canvasPoint) {
+                    selectedRelationshipID = relationshipID
+                    editingRelationshipID = relationshipID
+                    return
+                }
+                createNode(at: canvasPoint)
             }
     }
 
@@ -732,9 +863,16 @@ struct InfiniteCanvasView: View {
             .onEnded { value in
                 let canvasPoint = screenToCanvasPosition(value.location)
 
-                if node(at: canvasPoint) == nil {
-                    clearSelection()
+                guard node(at: canvasPoint) == nil else {
+                    return
                 }
+                if let relationshipID = relationship(at: canvasPoint) {
+                    clearSelection()
+                    selectedRelationshipID = relationshipID
+                    return
+                }
+                relationshipSourceID = nil
+                clearSelection()
             }
     }
 
@@ -1148,11 +1286,16 @@ struct InfiniteCanvasView: View {
     private func saveCurrentFileAs() -> Bool {
         isShowingAppearancePopover = false
 
+        let isITMZ = isITMZFile(currentFileURL)
         let savePanel = NSSavePanel()
-        savePanel.title = "Save MyThoughts File"
-        savePanel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "Untitled.\(MyThoughtsDocumentService.fileExtension)"
+        savePanel.title = "Save Map"
+        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .mythoughts for MyThoughts-only features."
+        let defaultExtension = isITMZ ? ItmzExportService.fileExtension : MyThoughtsDocumentService.fileExtension
+        savePanel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "\(suggestedMapFileName).\(defaultExtension)"
         savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [myThoughtsDocumentContentType]
+        savePanel.allowedContentTypes = isITMZ
+            ? [iThoughtsDocumentContentType, myThoughtsDocumentContentType]
+            : [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
 
         guard savePanel.runModal() == .OK,
               var url = savePanel.url else {
@@ -1160,8 +1303,9 @@ struct InfiniteCanvasView: View {
             return false
         }
 
-        if url.pathExtension.lowercased() != MyThoughtsDocumentService.fileExtension {
-            url.appendPathExtension(MyThoughtsDocumentService.fileExtension)
+        let pathExtension = url.pathExtension.lowercased()
+        if pathExtension != MyThoughtsDocumentService.fileExtension && pathExtension != ItmzExportService.fileExtension {
+            url.appendPathExtension(defaultExtension)
         }
 
         return saveCurrentMap(to: url, shouldUpdateCurrentFile: true)
@@ -1174,11 +1318,16 @@ struct InfiniteCanvasView: View {
             print("MyThoughts save validation:\n\(validationReport.summary)")
         }
 
+        if isITMZFile(url) {
+            return saveCurrentMapAsITMZ(to: url, shouldUpdateCurrentFile: shouldUpdateCurrentFile)
+        }
+
         do {
             try MyThoughtsDocumentService.export(
                 nodes: nodes,
                 connections: connections,
                 summaries: summaries,
+                relationships: relationships,
                 canvasSettings: appearance,
                 notePanelSettings: notePanelSettings,
                 createdAt: documentCreatedAt,
@@ -1186,6 +1335,7 @@ struct InfiniteCanvasView: View {
             )
 
             if shouldUpdateCurrentFile {
+                itmzSession = nil
                 currentFileURL = url
                 RecentFilesStore.add(url)
                 isDirty = false
@@ -1213,11 +1363,13 @@ struct InfiniteCanvasView: View {
         }
 
         let openPanel = NSOpenPanel()
-        openPanel.title = "Open MyThoughts File"
+        openPanel.title = "Open Map"
+        openPanel.message = "Open a MyThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
-        openPanel.allowedContentTypes = [myThoughtsDocumentContentType]
+        openPanel.allowedContentTypes = [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
+            + OutlineFormat.importExtensions.compactMap { UTType(filenameExtension: $0) }
 
         guard openPanel.runModal() == .OK,
               let url = openPanel.url else {
@@ -1245,6 +1397,15 @@ struct InfiniteCanvasView: View {
     }
 
     private func openMyThoughtsFile(at url: URL) {
+        if isITMZFile(url) {
+            openITMZFile(at: url)
+            return
+        }
+        if OutlineFormat(fileExtension: url.pathExtension) != nil {
+            openOutlineFile(at: url)
+            return
+        }
+
         do {
             let document = try MyThoughtsDocumentService.import(from: url)
             guard document.documentType == .fullMap else {
@@ -1273,6 +1434,9 @@ struct InfiniteCanvasView: View {
         nodes = []
         connections = []
         summaries = []
+        relationships = []
+        itmzSession = nil
+        relationshipSourceID = nil
         clearSelection()
         editingNodeID = nil
         detailsNodeID = nil
@@ -1338,6 +1502,8 @@ struct InfiniteCanvasView: View {
         nodes = repairResult.nodes
         connections = repairResult.connections
         summaries = []
+        relationships = []
+        itmzSession = nil
 
         clearSelection()
         editingNodeID = nil
@@ -1393,6 +1559,8 @@ struct InfiniteCanvasView: View {
         nodes = repairResult.nodes
         connections = repairResult.connections
         summaries = repairResult.summaries
+        relationships = document.relationships
+        itmzSession = nil
         appearance = document.canvasSettings
         notePanelSettings = document.notePanelSettings
 
@@ -1453,19 +1621,26 @@ struct InfiniteCanvasView: View {
         }
     }
 
+    /// The map window, also when the app is not frontmost (keyWindow is nil then).
+    private static var mainWindow: NSWindow? {
+        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
+    }
+
     private func updateWindowTitle() {
         guard !isShowingStartScreen else {
             DispatchQueue.main.async {
-                NSApp.keyWindow?.title = "MyThoughts"
+                Self.mainWindow?.title = "MyThoughts"
             }
             return
         }
 
-        let baseTitle = currentFileURL?.lastPathComponent ?? "Untitled"
+        let baseTitle = currentFileURL.map { url in
+            isITMZFile(url) ? "\(url.lastPathComponent) — iThoughts" : url.lastPathComponent
+        } ?? "Untitled"
         let title = isDirty ? "\(baseTitle) *" : baseTitle
 
         DispatchQueue.main.async {
-            NSApp.keyWindow?.title = title
+            Self.mainWindow?.title = title
         }
     }
 
@@ -1493,6 +1668,7 @@ struct InfiniteCanvasView: View {
                 nodes: nodes,
                 connections: connections,
                 summaries: summaries,
+                relationships: relationships,
                 canvasSettings: appearance,
                 notePanelSettings: notePanelSettings,
                 createdAt: documentCreatedAt,
@@ -1655,7 +1831,9 @@ struct InfiniteCanvasView: View {
             summaries: visibleSummaries(for: visibleIDs),
             appearance: appearance,
             colorScheme: colorScheme,
-            displayedProgressByNodeID: displayedProgressByNodeID
+            displayedProgressByNodeID: displayedProgressByNodeID,
+            relationships: relationships.filter { visibleIDs.contains($0.fromNodeID) && visibleIDs.contains($0.toNodeID) },
+            effectiveColorHexByNodeID: derivedData.effectiveColorHexByNodeID
         )
     }
 
@@ -1759,6 +1937,628 @@ struct InfiniteCanvasView: View {
         }
     }
 
+    /// Opens a file handed over by Finder, if one is waiting.
+    private func openPendingExternalFile() {
+        guard let url = ExternalOpenQueue.takeLatest() else {
+            return
+        }
+        if currentFileURL?.standardizedFileURL == url.standardizedFileURL && !isDirty {
+            isShowingStartScreen = false
+            return
+        }
+        openRecentFile(url)
+    }
+
+    // MARK: iThoughts (.itmz) files
+
+    private func isITMZFile(_ url: URL?) -> Bool {
+        url?.pathExtension.lowercased() == ItmzExportService.fileExtension
+    }
+
+    private var suggestedMapFileName: String {
+        let rootTitle = nodes.filter { $0.parentID == nil }
+            .min { $0.sortIndex < $1.sortIndex }
+            .map { TopicText.plain($0.title).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        let firstLine = rootTitle.split(separator: "\n").first.map(String.init) ?? ""
+        let cleaned = firstLine.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        return cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(80))
+    }
+
+    /// Opens an .itmz for editing in place: Save writes back into the same file.
+    private func openITMZFile(at url: URL) {
+        do {
+            let opened = try ItmzExportService.open(url)
+            let result = opened.result
+            let repairResult = MapValidator.repair(
+                nodes: result.nodes,
+                connections: result.connections,
+                summaries: result.summaries
+            )
+            nodes = repairResult.nodes
+            connections = repairResult.connections
+            summaries = repairResult.summaries
+            relationships = result.relationships
+            itmzSession = opened.session
+
+            clearSelection()
+            editingNodeID = nil
+            detailsNodeID = nil
+            isFocusMode = false
+            focusedNodeID = nil
+            newNodeIDs.removeAll()
+            draggedNodeID = nil
+            dropTargetNodeID = nil
+            isDraggingNode = false
+            relationshipSourceID = nil
+            historyManager.removeAll()
+            refreshDerivedData()
+
+            if let rootID = result.rootNodeIDs.first(where: { id in nodes.contains { $0.id == id } }) ?? nodes.first?.id {
+                selectedNodeID = rootID
+                selectedNodeIDs = [rootID]
+                centerCanvas(on: rootID)
+            }
+
+            currentFileURL = url
+            RecentFilesStore.add(url)
+            lastSavedAt = Date()
+            documentCreatedAt = Date()
+            isDirty = false
+            saveNodes(markDirty: false)
+            hasCenteredInitialContent = true
+            isShowingStartScreen = false
+            updateWindowTitle()
+
+            var message = "Opened iThoughts map (\(result.report.importedDescription))."
+            if let notes = result.report.notImportedDescription {
+                message += "\n\n\(notes)"
+            }
+            if !repairResult.actions.isEmpty {
+                print("iThoughts open repair:\n\(repairResult.summary)")
+            }
+            showStatusMessage(message)
+        } catch {
+            RecentFilesStore.remove(url)
+            print("iThoughts open: failed to open \(url.path): \(error).")
+            showStatusMessage("Could not open iThoughts file: \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    @discardableResult
+    private func saveCurrentMapAsITMZ(to url: URL, shouldUpdateCurrentFile: Bool) -> Bool {
+        // Keep the original file's DOM only when saving that same file (or exporting from it).
+        let session = itmzSession
+        do {
+            let result = try ItmzExportService.save(
+                nodes: nodes,
+                summaries: summaries,
+                relationships: relationships,
+                session: session,
+                to: url
+            )
+            if shouldUpdateCurrentFile {
+                itmzSession = result.session
+                currentFileURL = url
+                RecentFilesStore.add(url)
+                isDirty = false
+                lastSavedAt = Date()
+                updateWindowTitle()
+            }
+            let report = result.report
+            var message = "Saved iThoughts file."
+            let changes = [
+                report.created > 0 ? "\(report.created) new" : nil,
+                report.changed > 0 ? "\(report.changed) changed" : nil,
+                report.moved > 0 ? "\(report.moved) moved" : nil,
+                report.deleted > 0 ? "\(report.deleted) deleted" : nil
+            ].compactMap { $0 }
+            if session != nil && !changes.isEmpty {
+                message += " Topics: " + changes.joined(separator: ", ") + "."
+            }
+            if let backupURL = result.backupURL {
+                message += "\n\nThe previous version was backed up to \(backupURL.lastPathComponent)."
+            }
+            showStatusMessage(message)
+            focusCanvas()
+            return true
+        } catch {
+            print("iThoughts save: failed to write \(url.path): \(error).")
+            showStatusMessage("Could not save iThoughts file: \(error.localizedDescription)")
+            focusCanvas()
+            return false
+        }
+    }
+
+    private func exportITMZFile() {
+        isShowingAppearancePopover = false
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export as iThoughts"
+        savePanel.nameFieldStringValue = "\(suggestedMapFileName).\(ItmzExportService.fileExtension)"
+        savePanel.canCreateDirectories = true
+        savePanel.allowedContentTypes = [iThoughtsDocumentContentType]
+
+        guard savePanel.runModal() == .OK, var url = savePanel.url else {
+            focusCanvas()
+            return
+        }
+        if url.pathExtension.lowercased() != ItmzExportService.fileExtension {
+            url.appendPathExtension(ItmzExportService.fileExtension)
+        }
+
+        do {
+            // Exporting a copy: do not let the export redirect the open session's file.
+            let exportSession: ItmzEditingSession?
+            if let itmzSession {
+                exportSession = ItmzEditingSession(
+                    document: try ItmzDocument(data: try itmzSession.document.archiveData()),
+                    topicUUIDs: itmzSession.topicUUIDs,
+                    relationshipUUIDs: itmzSession.relationshipUUIDs,
+                    canvasOffset: itmzSession.canvasOffset
+                )
+            } else {
+                exportSession = nil
+            }
+            _ = try ItmzExportService.save(
+                nodes: nodes,
+                summaries: summaries,
+                relationships: relationships,
+                session: exportSession,
+                to: url
+            )
+            showStatusMessage("Exported iThoughts file \(url.lastPathComponent).")
+        } catch {
+            print("iThoughts export: failed to write \(url.path): \(error).")
+            showStatusMessage("Could not export iThoughts file: \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    // MARK: Tasks
+
+    /// All resource names used in the map, for the Task ▸ Resources menu.
+    private var knownResources: [String] {
+        Array(Set(nodes.flatMap(\.resources))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private func applyTaskAction(_ action: TaskAction, to ids: Set<CanvasNode.ID>) {
+        guard !ids.isEmpty else {
+            showStatusMessage("Select a topic first.")
+            return
+        }
+        recordUndoSnapshot()
+        let now = Date()
+        for index in nodes.indices where ids.contains(nodes[index].id) {
+            TaskAction.apply(action, to: &nodes[index], now: now)
+        }
+        saveNodes()
+    }
+
+    private func jumpToNode(_ nodeID: CanvasNode.ID) {
+        guard nodes.contains(where: { $0.id == nodeID }) else {
+            return
+        }
+        if isFocusMode, !isNodeVisibleInFocusMode(nodeID) {
+            exitFocusMode()
+        }
+        if appearance.taskDisplay.hideCompletedTasks,
+           nodes.first(where: { $0.id == nodeID })?.completedAt != nil {
+            updateAppearance { $0.taskDisplay.hideCompletedTasks = false }
+        }
+        expandAncestors(of: nodeID)
+        refreshDerivedData()
+        selectNode(nodeID)
+        centerCanvas(on: nodeID)
+    }
+
+    private func addRemindersForTasks(_ ids: [CanvasNode.ID]) {
+        let targets = nodes.filter { ids.contains($0.id) && $0.appleReminderID == nil }
+        guard !targets.isEmpty, !isSyncingApple else {
+            return
+        }
+        isSyncingApple = true
+        Task { @MainActor in
+            defer { isSyncingApple = false }
+            do {
+                let created = try await AppleIntegrationService.createReminders(for: targets)
+                for index in nodes.indices {
+                    if let reminderID = created[nodes[index].id] {
+                        nodes[index].appleReminderID = reminderID
+                        var syncState = nodes[index].appleSync ?? AppleSyncState()
+                        syncState.reminder = AppleIntegrationService.reminderValues(of: nodes[index])
+                        nodes[index].appleSync = syncState
+                    }
+                }
+                saveNodes()
+                showStatusMessage("Added \(created.count) task(s) to Apple Reminders. Changes made there come back with Sync.")
+            } catch {
+                showStatusMessage(appleReminderErrorMessage(for: error))
+            }
+        }
+    }
+
+    /// Two-way sync with linked Reminders and Calendar events.
+    /// Automatic runs (when the app becomes active) are throttled and quiet unless something changed.
+    private func syncWithApple(isAutomatic: Bool) {
+        guard !isSyncingApple else {
+            return
+        }
+        let hasLinks = nodes.contains { $0.appleReminderID != nil || $0.appleCalendarEventID != nil }
+        if isAutomatic {
+            guard hasLinks, appearance.taskDisplay.autoSyncWithApple else {
+                return
+            }
+            if let lastAppleSyncAt, Date().timeIntervalSince(lastAppleSyncAt) < 60 {
+                return
+            }
+        }
+        isSyncingApple = true
+        let snapshot = nodes
+        Task { @MainActor in
+            let result = await AppleIntegrationService.sync(nodes: snapshot)
+            isSyncingApple = false
+            lastAppleSyncAt = Date()
+            // Only apply if the map was not edited meanwhile (otherwise the next sync merges it).
+            guard nodes == snapshot else {
+                return
+            }
+            let changedMap = result.nodes != snapshot
+            if changedMap {
+                recordUndoSnapshot()
+                nodes = result.nodes
+                saveNodes(markDirty: result.report.pulled > 0 || result.nodes.map(\.appleReminderID) != snapshot.map(\.appleReminderID))
+            }
+            if !isAutomatic || result.report.pulled > 0 || result.report.unlinked > 0 || !result.report.errors.isEmpty {
+                showStatusMessage(result.report.summary)
+            }
+        }
+    }
+
+    // MARK: Outline formats (Markdown, OPML, FreeMind)
+
+    /// Opens an outline as a new, untitled map (Save asks where to store it).
+    private func openOutlineFile(at url: URL) {
+        do {
+            let result = try OutlineFormatService.importFile(at: url)
+            nodes = result.nodes
+            connections = result.connections
+            summaries = []
+            relationships = result.relationships
+            itmzSession = nil
+
+            clearSelection()
+            editingNodeID = nil
+            detailsNodeID = nil
+            isFocusMode = false
+            focusedNodeID = nil
+            newNodeIDs.removeAll()
+            relationshipSourceID = nil
+            historyManager.removeAll()
+            refreshDerivedData()
+            selectedNodeID = result.rootNodeID
+            selectedNodeIDs = [result.rootNodeID]
+            centerCanvas(on: result.rootNodeID)
+
+            currentFileURL = nil
+            lastSavedAt = nil
+            documentCreatedAt = Date()
+            saveNodes(markDirty: true)
+            hasCenteredInitialContent = true
+            isShowingStartScreen = false
+            updateWindowTitle()
+            showStatusMessage("Imported \(url.lastPathComponent) (\(result.topicCount) topics) as a new map. Use Save to keep it.")
+        } catch {
+            print("Outline import: failed to read \(url.path): \(error).")
+            showStatusMessage("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    private func exportOutlineFile(_ format: OutlineFormat) {
+        isShowingAppearancePopover = false
+        guard !nodes.isEmpty else {
+            showStatusMessage("The map is empty.")
+            return
+        }
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export as \(format.label)"
+        savePanel.nameFieldStringValue = "\(suggestedMapFileName).\(format.fileExtension)"
+        savePanel.canCreateDirectories = true
+        if let type = UTType(filenameExtension: format.fileExtension) {
+            savePanel.allowedContentTypes = [type]
+        }
+        guard savePanel.runModal() == .OK, var url = savePanel.url else {
+            focusCanvas()
+            return
+        }
+        if url.pathExtension.lowercased() != format.fileExtension {
+            url.appendPathExtension(format.fileExtension)
+        }
+
+        do {
+            let written = try OutlineFormatService.export(
+                format,
+                nodes: nodes,
+                relationships: relationships,
+                title: suggestedMapFileName,
+                to: url
+            )
+            let images = written.count - 1
+            showStatusMessage("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
+        } catch {
+            print("\(format.label) export: failed to write \(url.path): \(error).")
+            showStatusMessage("Could not export \(format.label): \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    // MARK: Relationships
+
+    private var editingRelationshipBinding: Binding<CanvasRelationship>? {
+        guard let editingRelationshipID,
+              relationships.contains(where: { $0.id == editingRelationshipID }) else {
+            return nil
+        }
+        return Binding(
+            get: {
+                relationships.first { $0.id == editingRelationshipID }
+                    ?? CanvasRelationship(fromNodeID: UUID(), toNodeID: UUID())
+            },
+            set: { newValue in
+                guard let index = relationships.firstIndex(where: { $0.id == editingRelationshipID }) else {
+                    return
+                }
+                if relationships[index] != newValue {
+                    recordRelationshipEditSnapshotIfNeeded()
+                    relationships[index] = newValue
+                    markDirty()
+                }
+            }
+        )
+    }
+
+    private func recordRelationshipEditSnapshotIfNeeded() {
+        guard detailsHistoryNodeID != editingRelationshipID else {
+            return
+        }
+        recordUndoSnapshot()
+        detailsHistoryNodeID = editingRelationshipID
+    }
+
+    private func relationshipEndTitle(_ nodeID: CanvasNode.ID) -> String {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else {
+            return "Missing topic"
+        }
+        let title = TopicText.plain(node.title).trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? (node.style.imageData != nil ? "Image" : "Untitled") : String(title.prefix(60))
+    }
+
+    private var relationshipModeIndicator: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.branch")
+            Text("Click the topic to connect to “\(relationshipSourceID.map(relationshipEndTitle) ?? "")”.  Esc cancels.")
+                .lineLimit(1)
+            Button("Cancel") {
+                relationshipSourceID = nil
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+        }
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: Capsule())
+    }
+
+    /// Two topics selected: connect them. One selected: start "click the other end" mode.
+    private func addRelationshipFromSelection() {
+        let selected = nodes.filter { selectedNodeIDs.contains($0.id) }
+        if selected.count == 2 {
+            let ordered = selectedNodeID == selected[1].id ? [selected[0], selected[1]] : [selected[1], selected[0]]
+            createRelationship(from: ordered[0].id, to: ordered[1].id)
+        } else if let selectedNodeID {
+            relationshipSourceID = selectedNodeID
+        } else {
+            showStatusMessage("Select one topic (then click the other end), or two topics, to add a relationship.")
+        }
+    }
+
+    private func createRelationship(from fromID: CanvasNode.ID, to toID: CanvasNode.ID) {
+        guard fromID != toID else {
+            return
+        }
+        recordUndoSnapshot()
+        let relationship = CanvasRelationship(fromNodeID: fromID, toNodeID: toID)
+        relationships.append(relationship)
+        relationshipSourceID = nil
+        selectedRelationshipID = relationship.id
+        saveNodes()
+        focusCanvas()
+    }
+
+    private func deleteRelationship(_ id: CanvasRelationship.ID) {
+        guard relationships.contains(where: { $0.id == id }) else {
+            return
+        }
+        recordUndoSnapshot()
+        relationships.removeAll { $0.id == id }
+        if selectedRelationshipID == id {
+            selectedRelationshipID = nil
+        }
+        saveNodes()
+        focusCanvas()
+    }
+
+    private func pruneDanglingRelationships() {
+        let ids = Set(nodes.map(\.id))
+        if relationships.contains(where: { !ids.contains($0.fromNodeID) || !ids.contains($0.toNodeID) }) {
+            relationships.removeAll { !ids.contains($0.fromNodeID) || !ids.contains($0.toNodeID) }
+        }
+    }
+
+    private func relationshipItems(inScreenSpace: Bool) -> [RelationshipRenderItem] {
+        let visibleIDs = derivedData.visibleNodeIDs
+        let nodesByID = derivedData.visibleNodesByID
+        let defaultColor = appearance.themeColors(for: colorScheme).connection
+        return relationships.compactMap { relationship in
+            guard visibleIDs.contains(relationship.fromNodeID), visibleIDs.contains(relationship.toNodeID),
+                  let from = nodesByID[relationship.fromNodeID], let to = nodesByID[relationship.toNodeID] else {
+                return nil
+            }
+            return RelationshipRenderItem(
+                id: relationship.id,
+                fromRect: inScreenSpace ? screenRect(for: from) : canvasRect(for: from),
+                toRect: inScreenSpace ? screenRect(for: to) : canvasRect(for: to),
+                lineStyle: relationship.lineStyle,
+                startStyle: relationship.startStyle,
+                endStyle: relationship.endStyle,
+                isDashed: relationship.isDashed,
+                color: TopicColor.color(relationship.colorHex) ?? defaultColor,
+                label: relationship.label,
+                isSelected: relationship.id == selectedRelationshipID
+            )
+        }
+    }
+
+    private func canvasRect(for node: CanvasNode) -> CGRect {
+        CGRect(x: node.x, y: node.y, width: node.width, height: node.height)
+    }
+
+    private func screenRect(for node: CanvasNode) -> CGRect {
+        let origin = canvasToScreenPosition(CGPoint(x: node.x, y: node.y))
+        return CGRect(x: origin.x, y: origin.y, width: node.width * zoomScale, height: node.height * zoomScale)
+    }
+
+    /// The relationship line under a canvas point, if any.
+    private func relationship(at canvasPoint: CGPoint) -> CanvasRelationship.ID? {
+        let tolerance = 6 / max(zoomScale, 0.1)
+        return relationshipItems(inScreenSpace: false)
+            .map { ($0.id, RelationshipGeometry.distance(from: canvasPoint, to: $0)) }
+            .filter { $0.1 <= tolerance }
+            .min { $0.1 < $1.1 }?
+            .0
+    }
+
+    private func relationshipLayer(in size: CGSize) -> some View {
+        RelationshipLayerView(
+            items: relationshipItems(inScreenSpace: true),
+            lineWidth: appearance.connectionLineThickness.width,
+            labelBackground: appearance.backgroundColor(for: colorScheme),
+            scale: zoomScale
+        )
+        .frame(width: size.width, height: size.height)
+        .allowsHitTesting(false)
+    }
+
+    private func boundaryLayer(in size: CGSize) -> some View {
+        let defaultColor = appearance.themeColors(for: colorScheme).connection
+        let items = derivedData.boundaries.map { boundary in
+            let origin = canvasToScreenPosition(boundary.rect.origin)
+            return BoundaryRenderItem(
+                rect: CGRect(x: origin.x, y: origin.y,
+                             width: boundary.rect.width * zoomScale, height: boundary.rect.height * zoomScale),
+                color: TopicColor.color(boundary.colorHex) ?? defaultColor
+            )
+        }
+        return BoundaryLayerView(items: items, scale: zoomScale)
+            .frame(width: size.width, height: size.height)
+            .allowsHitTesting(false)
+    }
+
+    // MARK: Topic style
+
+    private func applyTopicStyleAction(_ action: TopicStyleAction, to nodeID: CanvasNode.ID) {
+        let targetIDs = selectedNodeIDs.contains(nodeID) ? selectedNodeIDs : [nodeID]
+        switch action {
+        case .startRelationship:
+            selectSingleNode(nodeID)
+            relationshipSourceID = nodeID
+            return
+        case let .editRelationship(id):
+            selectedRelationshipID = id
+            editingRelationshipID = id
+            return
+        case let .deleteRelationship(id):
+            deleteRelationship(id)
+            return
+        case .chooseImage:
+            chooseImage(for: nodeID)
+            return
+        default:
+            break
+        }
+
+        recordUndoSnapshot()
+        for index in nodes.indices where targetIDs.contains(nodes[index].id) {
+            switch action {
+            case let .setColor(hex):
+                nodes[index].style.colorHex = hex
+            case let .setShape(shape):
+                nodes[index].style.shape = shape
+            case let .setTextSize(size):
+                nodes[index].style.textSize = size
+                resizeToFitContent(at: index)
+            case .toggleBoundary:
+                nodes[index].style.hasBoundary.toggle()
+            case .removeImage:
+                nodes[index].style.imageData = nil
+                nodes[index].style.imageName = nil
+                nodes[index].style.imageWidth = nil
+                resizeToFitContent(at: index)
+            default:
+                break
+            }
+        }
+        saveNodes()
+        focusCanvas()
+    }
+
+    private func chooseImage(for nodeID: CanvasNode.ID) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Topic Image"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.image]
+        guard panel.runModal() == .OK, let url = panel.url,
+              let index = nodes.firstIndex(where: { $0.id == nodeID }) else {
+            focusCanvas()
+            return
+        }
+        do {
+            let prepared = try TopicImageImport.prepare(contentsOf: url)
+            recordUndoSnapshot()
+            nodes[index].style.imageData = prepared.data
+            nodes[index].style.imageName = prepared.name
+            nodes[index].style.imageWidth = nil
+            resizeToFitContent(at: index)
+            saveNodes()
+        } catch {
+            showStatusMessage("Could not use this image: \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    /// Grows/shrinks a topic around its centre to fit its text size and image.
+    private func resizeToFitContent(at index: Int) {
+        let node = nodes[index]
+        let center = CGPoint(x: node.x + node.width / 2, y: node.y + node.height / 2)
+        var size = IThoughtsImportService.topicSize(
+            title: TopicText.plain(node.title),
+            textWidth: nil,
+            textSize: node.style.textSize,
+            image: node.style.imageData,
+            imageWidth: node.style.imageWidth
+        )
+        size.width = max(size.width, defaultNodeSize.width)
+        size.height = max(size.height, defaultNodeSize.height)
+        nodes[index].width = size.width
+        nodes[index].height = size.height
+        nodes[index].x = center.x - size.width / 2
+        nodes[index].y = center.y - size.height / 2
+    }
+
     private func validateCurrentMap() {
         isShowingAppearancePopover = false
 
@@ -1804,6 +2604,7 @@ struct InfiniteCanvasView: View {
         nodes = repairResult.nodes
         connections = repairResult.connections
         summaries = repairResult.summaries
+        relationships = document.relationships
         appearance = document.canvasSettings
         documentCreatedAt = document.createdAt
 
@@ -1850,13 +2651,15 @@ struct InfiniteCanvasView: View {
         pendingIThoughtsImportResult = nil
         let repairResult = MapValidator.repair(
             nodes: importResult.nodes,
-            connections: importResult.connections
+            connections: importResult.connections,
+            summaries: importResult.summaries
         )
 
         recordUndoSnapshot()
         nodes = repairResult.nodes
         connections = repairResult.connections
-        summaries = []
+        summaries = repairResult.summaries
+        relationships = importResult.relationships
         documentCreatedAt = Date()
 
         clearSelection()
@@ -1886,11 +2689,12 @@ struct InfiniteCanvasView: View {
         saveNodes()
         hasCenteredInitialContent = true
 
+        let importNotes = importResult.report.notImportedDescription.map { "\n\n\($0)" } ?? ""
         if repairResult.actions.isEmpty && repairResult.validationReport.isValid {
-            showStatusMessage("Imported iThoughts map.")
+            showStatusMessage("Imported iThoughts map (\(importResult.report.importedDescription)).\(importNotes)")
         } else if repairResult.validationReport.isValid {
             print("iThoughts import repair:\n\(repairResult.summary)")
-            showStatusMessage("Imported and repaired iThoughts map.\n\n\(repairResult.summary)")
+            showStatusMessage("Imported and repaired iThoughts map.\n\n\(repairResult.summary)\(importNotes)")
         } else {
             let message = "Imported iThoughts map with remaining validation issues.\n\n\(repairResult.validationReport.summary)"
             print("iThoughts import validation:\n\(message)")
@@ -1931,6 +2735,9 @@ struct InfiniteCanvasView: View {
 
                 detailsHistoryNodeID = nodeID
                 nodes[currentIndex].appleReminderID = reminderID
+                var syncState = nodes[currentIndex].appleSync ?? AppleSyncState()
+                syncState.reminder = AppleIntegrationService.reminderValues(of: nodes[currentIndex])
+                nodes[currentIndex].appleSync = syncState
                 saveNodes()
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Reminder.")
@@ -1988,6 +2795,7 @@ struct InfiniteCanvasView: View {
 
                 detailsHistoryNodeID = nodeID
                 nodes[currentIndex].appleCalendarEventID = eventID
+                nodes[currentIndex].appleSync?.event = nil
                 saveNodes()
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Calendar Event.")
@@ -2435,7 +3243,8 @@ struct InfiniteCanvasView: View {
                 height: node.height,
                 sortIndex: node.sortIndex,
                 parentID: rootIDs.contains(node.id) ? nil : node.parentID,
-                isCollapsed: node.isCollapsed
+                isCollapsed: node.isCollapsed,
+                style: node.style
             )
         }
     }
@@ -2524,7 +3333,8 @@ struct InfiniteCanvasView: View {
                 height: node.height,
                 sortIndex: newSortIndex,
                 parentID: newParentID,
-                isCollapsed: node.isCollapsed
+                isCollapsed: node.isCollapsed,
+                style: node.style
             )
         }
 
@@ -3193,11 +4003,13 @@ struct InfiniteCanvasView: View {
     }
 
     private func saveNodes(markDirty shouldMarkDirty: Bool = true) {
+        pruneDanglingRelationships()
         refreshDerivedData()
         NodeStore.saveDocument(
             nodes: nodes,
             connections: connections,
             summaries: summaries,
+            relationships: relationships,
             canvasSettings: appearance,
             notePanelSettings: notePanelSettings,
             createdAt: documentCreatedAt
@@ -3214,7 +4026,7 @@ struct InfiniteCanvasView: View {
     }
 
     private var currentHistorySnapshot: MapHistorySnapshot {
-        MapHistorySnapshot(nodes: nodes, connections: connections, summaries: summaries)
+        MapHistorySnapshot(nodes: nodes, connections: connections, summaries: summaries, relationships: relationships)
     }
 
     private func recordUndoSnapshot() {
@@ -3243,6 +4055,7 @@ struct InfiniteCanvasView: View {
         nodes = snapshot.nodes
         connections = snapshot.connections
         summaries = snapshot.summaries
+        relationships = snapshot.relationships
         refreshDerivedData()
 
         if let selectedNodeID, !nodes.contains(where: { $0.id == selectedNodeID }) {
@@ -3735,6 +4548,26 @@ struct InfiniteCanvasView: View {
             return false
         }
 
+        if event.keyCode == KeyCode.escape, relationshipSourceID != nil {
+            relationshipSourceID = nil
+            return true
+        }
+
+        if let selectedRelationshipID {
+            if event.keyCode == KeyCode.delete || event.keyCode == KeyCode.forwardDelete {
+                deleteRelationship(selectedRelationshipID)
+                return true
+            }
+            if event.keyCode == KeyCode.return {
+                editingRelationshipID = selectedRelationshipID
+                return true
+            }
+            if event.keyCode == KeyCode.escape {
+                self.selectedRelationshipID = nil
+                return true
+            }
+        }
+
         if event.keyCode == KeyCode.escape,
            isFocusMode {
             exitFocusMode()
@@ -3953,6 +4786,43 @@ struct InfiniteCanvasView: View {
                 )
             )
 
+            Toggle(
+                "Resources",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.showResources },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.showResources = newValue
+                        }
+                    }
+                )
+            )
+
+            Toggle(
+                "Hide Completed Tasks",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.hideCompletedTasks },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.hideCompletedTasks = newValue
+                        }
+                        refreshDerivedData()
+                    }
+                )
+            )
+
+            Toggle(
+                "Auto-sync Reminders & Calendar",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.autoSyncWithApple },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.autoSyncWithApple = newValue
+                        }
+                    }
+                )
+            )
+
             Divider()
 
             Picker(
@@ -4075,6 +4945,10 @@ struct InfiniteCanvasView: View {
                 importIThoughtsFile()
             }
 
+            Button("Export as iThoughts .itmz") {
+                exportITMZFile()
+            }
+
             Divider()
 
             Button("Copy") {
@@ -4152,7 +5026,32 @@ struct InfiniteCanvasView: View {
             isDropTarget: dropTargetNodeID == wrappedNode.id,
             zoomScale: zoomScale,
             hasChildren: hasChildren(wrappedNode.id),
+            fillHex: derivedData.effectiveColorHexByNodeID[wrappedNode.id],
+            isRelationshipSource: relationshipSourceID == wrappedNode.id,
+            relationshipMenuItems: relationships
+                .filter { $0.fromNodeID == wrappedNode.id || $0.toNodeID == wrappedNode.id }
+                .map { relationship in
+                    let otherID = relationship.fromNodeID == wrappedNode.id ? relationship.toNodeID : relationship.fromNodeID
+                    let arrow = relationship.fromNodeID == wrappedNode.id ? "→" : "←"
+                    let label = relationship.label.isEmpty ? "" : " (\(relationship.label))"
+                    return RelationshipMenuItem(id: relationship.id, title: "\(arrow) \(relationshipEndTitle(otherID))\(label)")
+                },
+            knownResources: knownResources,
+            onStyleAction: { action in
+                applyTopicStyleAction(action, to: wrappedNode.id)
+            },
+            onTaskAction: { action in
+                let targets = selectedNodeIDs.contains(wrappedNode.id) ? selectedNodeIDs : [wrappedNode.id]
+                applyTaskAction(action, to: targets)
+            },
             onSelect: {
+                selectedRelationshipID = nil
+                if let sourceID = relationshipSourceID {
+                    if sourceID != wrappedNode.id {
+                        createRelationship(from: sourceID, to: wrappedNode.id)
+                    }
+                    return
+                }
                 if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
                     toggleNodeSelection(wrappedNode.id)
                 } else {
@@ -4358,7 +5257,8 @@ struct InfiniteCanvasView: View {
         let segments = derivedData.visibleConnectionSegments.map { segment in
             ConnectionSegment(
                 start: canvasToScreenPosition(segment.start),
-                end: canvasToScreenPosition(segment.end)
+                end: canvasToScreenPosition(segment.end),
+                colorHex: segment.colorHex
             )
         }
 
@@ -4472,10 +5372,14 @@ private struct CanvasDerivedData {
     var displayedCostByNodeID: [CanvasNode.ID: Double] = [:]
     var displayedEffortByNodeID: [CanvasNode.ID: Double] = [:]
     var visibleConnectionSegments: [ConnectionSegment] = []
+    var visibleNodesByID: [CanvasNode.ID: CanvasNode] = [:]
+    /// Own colour, else the nearest coloured ancestor's (iThoughts `inheritColor`).
+    var effectiveColorHexByNodeID: [CanvasNode.ID: String] = [:]
+    var boundaries: [(rect: CGRect, colorHex: String?)] = []
 
     init() { }
 
-    init(nodes: [CanvasNode], connections: [CanvasConnection], focusedNodeID: CanvasNode.ID? = nil) {
+    init(nodes: [CanvasNode], connections: [CanvasConnection], focusedNodeID: CanvasNode.ID? = nil, hidesCompletedTasks: Bool = false) {
         let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         childrenByParent = Dictionary(grouping: nodes.compactMap { node -> CanvasNode? in
             guard node.parentID != nil else {
@@ -4490,11 +5394,20 @@ private struct CanvasDerivedData {
             nodes
                 .filter { node in
                     Self.isVisibleInFocusMode(node, focusedNodeID: focusedNodeID, nodesByID: nodesByID) &&
-                    Self.isVisible(node, nodesByID: nodesByID)
+                    Self.isVisible(node, nodesByID: nodesByID) &&
+                    !(hidesCompletedTasks && Self.isInCompletedBranch(node, nodesByID: nodesByID))
                 }
                 .map(\.id)
         )
         visibleNodes = nodes.filter { visibleNodeIDs.contains($0.id) }
+        visibleNodesByID = Dictionary(visibleNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        effectiveColorHexByNodeID = Self.effectiveColors(nodes: nodes, nodesByID: nodesByID)
+        boundaries = Self.boundaries(
+            visibleNodes: visibleNodes,
+            visibleNodesByID: visibleNodesByID,
+            childrenByParent: childrenByParent,
+            colors: effectiveColorHexByNodeID
+        )
 
         for node in nodes {
             displayedProgressByNodeID[node.id] = Self.displayedProgress(for: node, childrenByParent: childrenByParent)
@@ -4512,8 +5425,68 @@ private struct CanvasDerivedData {
 
             return ConnectionSegment(
                 start: Self.connectionStartPoint(from: parentNode, to: childNode),
-                end: Self.connectionEndPoint(from: parentNode, to: childNode)
+                end: Self.connectionEndPoint(from: parentNode, to: childNode),
+                colorHex: effectiveColorHexByNodeID[childNode.id]
             )
+        }
+    }
+
+    private static func effectiveColors(
+        nodes: [CanvasNode],
+        nodesByID: [CanvasNode.ID: CanvasNode]
+    ) -> [CanvasNode.ID: String] {
+        var result: [CanvasNode.ID: String] = [:]
+        var resolved = Set<CanvasNode.ID>()
+        for node in nodes {
+            var chain: [CanvasNode.ID] = []
+            var current: CanvasNode? = node
+            var found: String?
+            var visited = Set<CanvasNode.ID>()
+            while let candidate = current, !visited.contains(candidate.id) {
+                visited.insert(candidate.id)
+                if resolved.contains(candidate.id) {
+                    found = result[candidate.id]
+                    break
+                }
+                chain.append(candidate.id)
+                if let hex = candidate.style.colorHex {
+                    found = hex
+                    break
+                }
+                current = candidate.parentID.flatMap { nodesByID[$0] }
+            }
+            for id in chain {
+                resolved.insert(id)
+                if let found {
+                    result[id] = found
+                }
+            }
+        }
+        return result
+    }
+
+    private static func boundaries(
+        visibleNodes: [CanvasNode],
+        visibleNodesByID: [CanvasNode.ID: CanvasNode],
+        childrenByParent: [CanvasNode.ID: [CanvasNode]],
+        colors: [CanvasNode.ID: String]
+    ) -> [(rect: CGRect, colorHex: String?)] {
+        visibleNodes.filter(\.style.hasBoundary).map { node in
+            var rect = CGRect(x: node.x, y: node.y, width: node.width, height: node.height)
+            var stack = childrenByParent[node.id] ?? []
+            var visited: Set<CanvasNode.ID> = [node.id]
+            while let child = stack.popLast() {
+                guard !visited.contains(child.id) else {
+                    continue
+                }
+                visited.insert(child.id)
+                guard let visibleChild = visibleNodesByID[child.id] else {
+                    continue
+                }
+                rect = rect.union(CGRect(x: visibleChild.x, y: visibleChild.y, width: visibleChild.width, height: visibleChild.height))
+                stack.append(contentsOf: childrenByParent[child.id] ?? [])
+            }
+            return (rect.insetBy(dx: -10, dy: -10), colors[node.id])
         }
     }
 
@@ -4546,6 +5519,20 @@ private struct CanvasDerivedData {
             currentParentID = nodesByID[parentID]?.parentID
         }
 
+        return false
+    }
+
+    /// A completed task hides with its whole branch (iThoughts "Hide completed tasks").
+    private static func isInCompletedBranch(_ node: CanvasNode, nodesByID: [CanvasNode.ID: CanvasNode]) -> Bool {
+        var current: CanvasNode? = node
+        var visited = Set<CanvasNode.ID>()
+        while let candidate = current, !visited.contains(candidate.id) {
+            if candidate.completedAt != nil {
+                return true
+            }
+            visited.insert(candidate.id)
+            current = candidate.parentID.flatMap { nodesByID[$0] }
+        }
         return false
     }
 
@@ -4647,6 +5634,7 @@ private struct CanvasDerivedData {
 private struct ConnectionSegment {
     var start: CGPoint
     var end: CGPoint
+    var colorHex: String? = nil
 }
 
 private struct SummaryRenderItem {
@@ -4664,18 +5652,19 @@ private struct ConnectionLayerView: View {
 
     var body: some View {
         Canvas { context, _ in
-            var path = Path()
-
-            for segment in segments {
-                ConnectionLinePathBuilder.addConnection(
-                    from: segment.start,
-                    to: segment.end,
-                    style: lineStyle,
-                    to: &path
-                )
+            // Branch lines take their topic's colour, like iThoughts.
+            for (colorHex, group) in Dictionary(grouping: segments, by: \.colorHex) {
+                var path = Path()
+                for segment in group {
+                    ConnectionLinePathBuilder.addConnection(
+                        from: segment.start,
+                        to: segment.end,
+                        style: lineStyle,
+                        to: &path
+                    )
+                }
+                context.stroke(path, with: .color(TopicColor.color(colorHex) ?? lineColor), lineWidth: lineWidth)
             }
-
-            context.stroke(path, with: .color(lineColor), lineWidth: lineWidth)
         }
     }
 }
@@ -4712,6 +5701,7 @@ private struct NodeVisualStyle {
     var textColor: Color
     var shadowColor: Color
     var font: Font
+    var fontPointSize: CGFloat
     var cornerRadius: CGFloat
     var showsShadow: Bool
 
@@ -4723,6 +5713,7 @@ private struct NodeVisualStyle {
         textColor = colors.nodeText
         shadowColor = colors.shadow
         font = appearance.nodeFontSize.font
+        fontPointSize = appearance.nodeFontSize.pointSize
 
         switch appearance.nodeStyle {
         case .roundedRectangle:
@@ -4741,25 +5732,31 @@ private struct NodeVisualStyle {
 private struct NodeTaskIndicators {
     var showCompletionMarker: Bool
     var completionVisible: Bool
-    var progressText: String?
+    var progress: Int?
     var dueDateText: String?
-    var priorityText: String?
+    var dueStatus: DueStatus
+    var priority: TaskPriority
+    var resources: [String]
 
     var hasDetailRow: Bool {
-        progressText != nil || dueDateText != nil || priorityText != nil
+        progress != nil || dueDateText != nil || priority != .none || !resources.isEmpty
     }
 
+    /// Badges appear only for data the topic actually has.
     init(
         node: CanvasNode,
         displayedProgress: Int,
         settings: TaskDisplaySettings,
         dateFormatter: DateFormatter
     ) {
+        let isDone = node.completedAt != nil || displayedProgress >= 100
         showCompletionMarker = settings.showCompletionMarker
-        completionVisible = settings.showCompletionMarker && displayedProgress >= 100
-        progressText = settings.showProgress ? "\(displayedProgress)%" : nil
-        dueDateText = settings.showDueDate ? Self.compactDueDateText(node.dueDate, formatter: dateFormatter) : nil
-        priorityText = settings.showPriority ? Self.priorityText(node.priority) : nil
+        completionVisible = settings.showCompletionMarker && isDone
+        progress = settings.showProgress && displayedProgress > 0 && !isDone ? displayedProgress : nil
+        dueDateText = settings.showDueDate && !isDone ? Self.compactDueDateText(node.dueDate, formatter: dateFormatter) : nil
+        dueStatus = node.dueStatus()
+        priority = settings.showPriority && !isDone ? node.priority : .none
+        resources = settings.showResources ? node.resources : []
     }
 
     private static func compactDueDateText(_ dueDate: Date?, formatter: DateFormatter) -> String? {
@@ -4772,7 +5769,7 @@ private struct NodeTaskIndicators {
         let dueDay = calendar.startOfDay(for: dueDate)
 
         if dueDay < today {
-            return "Overdue"
+            return "Overdue " + formatter.string(from: dueDate)
         }
 
         if calendar.isDateInToday(dueDate) {
@@ -4784,19 +5781,6 @@ private struct NodeTaskIndicators {
         }
 
         return formatter.string(from: dueDate)
-    }
-
-    private static func priorityText(_ priority: TaskPriority) -> String? {
-        switch priority {
-        case .none:
-            nil
-        case .low:
-            "Low"
-        case .medium:
-            "Med"
-        case .high:
-            "High"
-        }
     }
 }
 
@@ -4811,6 +5795,12 @@ private struct NodeView: View {
     let isDropTarget: Bool
     let zoomScale: CGFloat
     let hasChildren: Bool
+    let fillHex: String?
+    let isRelationshipSource: Bool
+    let relationshipMenuItems: [RelationshipMenuItem]
+    let knownResources: [String]
+    let onStyleAction: (TopicStyleAction) -> Void
+    let onTaskAction: (TaskAction) -> Void
     let onSelect: () -> Void
     let onEdit: () -> Void
     let onCommit: () -> Void
@@ -4833,14 +5823,20 @@ private struct NodeView: View {
 
     var body: some View {
         ZStack {
-            nodeBackground
-
-            nodeBorder
+            TopicBoxBackground(
+                shape: resolvedShape,
+                fill: fillColor,
+                stroke: borderColor,
+                lineWidth: borderWidth,
+                shadow: visualStyle.showsShadow ? visualStyle.shadowColor : nil,
+                cornerRadius: visualStyle.cornerRadius * min(max(zoomScale, 0.5), 1.5),
+                selectionHalo: isSelected || isRelationshipSource ? visualStyle.selectedBorderColor : nil
+            )
 
             if isEditing {
-                TextField("Title", text: $node.title)
+                TextField("Title", text: $node.title, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(visualStyle.font)
+                    .font(titleFont)
                     .multilineTextAlignment(.center)
                     .focused($isTitleFocused)
                     .onSubmit(onCommit)
@@ -4848,70 +5844,74 @@ private struct NodeView: View {
                         onCancel()
                         return .handled
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 10 * zoomScale)
                     .onAppear {
                         isTitleFocused = true
                     }
             } else {
-                VStack(spacing: 2) {
-                    HStack(spacing: 6) {
+                VStack(spacing: 4 * zoomScale) {
+                    if let image = topicImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: imageDisplaySize.width * zoomScale, height: imageDisplaySize.height * zoomScale)
+                            .clipShape(RoundedRectangle(cornerRadius: 3 * zoomScale))
+                    }
+
+                    HStack(spacing: 6 * zoomScale) {
                         if let systemImageName = node.marker.systemImageName {
                             Image(systemName: systemImageName)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(visualStyle.textColor.opacity(0.62))
-                                .imageScale(.small)
+                                .font(.system(size: 11 * zoomScale, weight: .medium))
+                                .foregroundStyle(textColor.opacity(0.62))
                         }
 
                         if taskIndicators.completionVisible {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.caption.weight(.medium))
+                                .font(.system(size: 11 * zoomScale, weight: .medium))
                                 .foregroundStyle(visualStyle.selectedBorderColor.opacity(0.70))
-                                .imageScale(.small)
                         }
 
-                        Text(node.title)
-                            .font(visualStyle.font)
-                            .foregroundStyle(visualStyle.textColor)
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
+                        if !node.title.isEmpty || topicImage == nil {
+                            Text(TopicText.attributed(node.title))
+                                .font(titleFont)
+                                .strikethrough(taskIndicators.completionVisible, color: textColor.opacity(0.5))
+                                .foregroundStyle(textColor.opacity(taskIndicators.completionVisible ? 0.6 : 1))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(maximumTitleLines)
+                                .frame(maxWidth: .infinity)
+                        }
 
                         if hasChildren {
                             Button(action: onToggleCollapse) {
                                 Text(node.isCollapsed ? "+" : "-")
-                                    .font(.caption.weight(.semibold))
-                                .frame(minWidth: 18, minHeight: 18)
+                                    .font(.system(size: 11 * zoomScale, weight: .semibold))
+                                .frame(minWidth: 18 * zoomScale, minHeight: 18 * zoomScale)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(textColor.opacity(0.6))
                             .contentShape(Rectangle())
                             .help(node.isCollapsed ? "Expand" : "Collapse")
                         }
                     }
 
                     if taskIndicators.hasDetailRow {
-                        HStack(spacing: 8) {
-                            if let progressText = taskIndicators.progressText {
-                                Text(progressText)
-                            }
-
-                            if let dueDateText = taskIndicators.dueDateText {
-                                Text(dueDateText)
-                            }
-
-                            if let priorityText = taskIndicators.priorityText {
-                                Text(priorityText)
-                            }
-                        }
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(visualStyle.textColor.opacity(0.58))
-                        .lineLimit(1)
+                        TaskBadgeRow(
+                            progress: taskIndicators.progress,
+                            dueText: taskIndicators.dueDateText,
+                            dueStatus: taskIndicators.dueStatus,
+                            priority: taskIndicators.priority,
+                            resources: taskIndicators.resources,
+                            scale: zoomScale,
+                            textColor: textColor
+                        )
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 10 * zoomScale)
             }
         }
         .frame(width: node.width * zoomScale, height: node.height * zoomScale)
-        .contentShape(RoundedRectangle(cornerRadius: visualStyle.cornerRadius))
+        .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onEdit)
         .onTapGesture(count: 1, perform: onSelect)
         .contextMenu {
@@ -4935,6 +5935,96 @@ private struct NodeView: View {
                         }
                     }
                 }
+
+                Menu("Task") {
+                    TaskActionMenuItems(
+                        knownResources: knownResources,
+                        assignedResources: node.resources,
+                        isCompleted: node.isTaskCompleted,
+                        perform: onTaskAction
+                    )
+                }
+
+                Menu("Colour") {
+                    ForEach(TopicColor.palette, id: \.hex) { entry in
+                        Button {
+                            onStyleAction(.setColor(entry.hex))
+                        } label: {
+                            Label {
+                                Text(entry.name)
+                            } icon: {
+                                Image(nsImage: TopicColor.swatch(entry.hex))
+                            }
+                        }
+                    }
+                    Divider()
+                    Button("No Colour") {
+                        onStyleAction(.setColor(nil))
+                    }
+                }
+
+                Menu("Shape") {
+                    Button("Canvas Default") {
+                        onStyleAction(.setShape(nil))
+                    }
+                    Divider()
+                    ForEach(TopicShape.allCases) { shape in
+                        Button {
+                            onStyleAction(.setShape(shape))
+                        } label: {
+                            Label(shape.label, systemImage: shape.systemImageName)
+                        }
+                    }
+                }
+
+                Menu("Text Size") {
+                    Button("Default") {
+                        onStyleAction(.setTextSize(nil))
+                    }
+                    Divider()
+                    ForEach([10.0, 12, 14, 18, 24, 30, 36, 48], id: \.self) { size in
+                        Button("\(Int(size)) pt") {
+                            onStyleAction(.setTextSize(size))
+                        }
+                    }
+                }
+
+                Button(node.style.hasBoundary ? "Remove Boundary" : "Add Boundary") {
+                    onStyleAction(.toggleBoundary)
+                }
+
+                Menu("Image") {
+                    Button(node.style.imageData == nil ? "Add Image..." : "Replace Image...") {
+                        onStyleAction(.chooseImage)
+                    }
+                    Button("Remove Image") {
+                        onStyleAction(.removeImage)
+                    }
+                    .disabled(node.style.imageData == nil)
+                }
+
+                Divider()
+
+                Button("Add Relationship...") {
+                    onStyleAction(.startRelationship)
+                }
+
+                if !relationshipMenuItems.isEmpty {
+                    Menu("Relationships") {
+                        ForEach(relationshipMenuItems) { item in
+                            Menu(item.title) {
+                                Button("Edit...") {
+                                    onStyleAction(.editRelationship(item.id))
+                                }
+                                Button("Delete") {
+                                    onStyleAction(.deleteRelationship(item.id))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Divider()
 
                 Menu("Branch") {
                     Button("Select Branch") {
@@ -4980,48 +6070,50 @@ private struct NodeView: View {
         .gesture(nodeDragGesture)
     }
 
-    @ViewBuilder
-    private var nodeBackground: some View {
-        switch visualStyle.style {
-        case .roundedRectangle:
-            RoundedRectangle(cornerRadius: visualStyle.cornerRadius)
-                .fill(visualStyle.backgroundColor)
-                .shadow(
-                    color: visualStyle.showsShadow ? visualStyle.shadowColor : .clear,
-                    radius: 4,
-                    y: 2
-                )
-        case .capsule:
-            Capsule()
-                .fill(visualStyle.backgroundColor)
-                .shadow(
-                    color: visualStyle.showsShadow ? visualStyle.shadowColor : .clear,
-                    radius: 4,
-                    y: 2
-                )
-        case .minimalUnderline:
-            Rectangle()
-                .fill(Color.clear)
-        }
+    private var resolvedShape: TopicShape {
+        node.style.shape ?? visualStyle.style.topicShape
     }
 
-    @ViewBuilder
-    private var nodeBorder: some View {
-        switch visualStyle.style {
-        case .roundedRectangle:
-            RoundedRectangle(cornerRadius: visualStyle.cornerRadius)
-                .stroke(borderColor, lineWidth: borderWidth)
-        case .capsule:
-            Capsule()
-                .stroke(borderColor, lineWidth: borderWidth)
-        case .minimalUnderline:
-            VStack {
-                Spacer()
-                Rectangle()
-                    .fill(borderColor)
-                    .frame(height: max(borderWidth, 1))
-            }
+    private var fillColor: Color {
+        TopicColor.color(fillHex) ?? visualStyle.backgroundColor
+    }
+
+    private var textColor: Color {
+        if let fillHex, resolvedShape.isFilled {
+            return TopicColor.textColor(onFill: fillHex)
         }
+        return visualStyle.textColor
+    }
+
+    private var titleFont: Font {
+        let base = node.style.textSize.map { CGFloat($0) * 13 / 14 } ?? visualStyle.fontPointSize
+        return .system(size: max(base * zoomScale, 1))
+    }
+
+    private var topicImage: NSImage? {
+        TopicImageCache.image(for: node.id, data: node.style.imageData)
+    }
+
+    private var imageDisplaySize: CGSize {
+        guard let image = topicImage, image.size.width > 0 else {
+            return .zero
+        }
+        let preferred = node.style.imageWidth.map { CGFloat($0) } ?? min(image.size.width, 240)
+        let width = min(preferred, max(node.width - 16, 16))
+        let height = width * image.size.height / image.size.width
+        let maximumHeight = max(node.height - (node.title.isEmpty ? 12 : 30), 12)
+        if height > maximumHeight {
+            return CGSize(width: maximumHeight * image.size.width / image.size.height, height: maximumHeight)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    private var maximumTitleLines: Int {
+        let base = node.style.textSize.map { CGFloat($0) } ?? visualStyle.fontPointSize
+        let imageHeight = topicImage == nil ? 0 : imageDisplaySize.height + 6
+        let detailHeight: CGFloat = taskIndicators.hasDetailRow ? 14 : 0
+        let available = node.height - imageHeight - detailHeight - 8
+        return max(1, Int(available / (base * 1.25)))
     }
 
     private var borderColor: Color {
@@ -5029,7 +6121,13 @@ private struct NodeView: View {
             return visualStyle.selectedBorderColor.opacity(0.75)
         }
 
-        return isSelected ? visualStyle.selectedBorderColor : visualStyle.borderColor
+        if isSelected || isRelationshipSource {
+            return visualStyle.selectedBorderColor
+        }
+        if let fillHex {
+            return resolvedShape.isFilled ? TopicColor.borderColor(forFill: fillHex) : (TopicColor.color(fillHex) ?? visualStyle.borderColor)
+        }
+        return visualStyle.borderColor
     }
 
     private var borderWidth: CGFloat {
@@ -5388,6 +6486,18 @@ private struct NodeDetailsView: View {
                     }
                 }
 
+                TextField("Resources", text: resourcesBinding, prompt: Text("e.g. Anna, Ben"))
+                    .help("People or teams assigned to this task, separated by commas")
+
+                Toggle("Completed", isOn: Binding(
+                    get: { node.isTaskCompleted },
+                    set: { done in
+                        if done != node.isTaskCompleted {
+                            TaskAction.apply(.toggleDone, to: &node)
+                        }
+                    }
+                ))
+
                 if displayedProgress == 100 || node.completedAt != nil {
                     OptionalDateField("Completed At", date: $node.completedAt)
                 }
@@ -5442,6 +6552,12 @@ private struct NodeDetailsView: View {
                 }
             }
 
+            Section {
+                Text("Linked reminders and events sync both ways: ticking a reminder off on your iPhone marks the topic done, and edits here update Apple. Use Tasks ▸ Sync, or keep auto-sync on in Canvas settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Apple Reminder") {
                 if node.appleReminderID == nil {
                     Button("Create Apple Reminder", action: onCreateAppleReminder)
@@ -5491,6 +6607,13 @@ private struct NodeDetailsView: View {
             onEditingBegan()
             onSave()
         }
+    }
+
+    private var resourcesBinding: Binding<String> {
+        Binding(
+            get: { node.resources.joined(separator: ", ") },
+            set: { node.resources = IThoughtsImportService.resources(from: $0) }
+        )
     }
 
     @ViewBuilder
@@ -5713,10 +6836,43 @@ struct NotePanelSettings: Codable, Equatable {
 }
 
 struct TaskDisplaySettings: Codable, Equatable {
+    /// 2 = badges appear only on topics that have the data (so they can be on by default).
+    static let currentVersion = 2
+
     var showCompletionMarker = true
-    var showProgress = false
-    var showDueDate = false
-    var showPriority = false
+    var showProgress = true
+    var showDueDate = true
+    var showPriority = true
+    var showResources = true
+    /// iThoughts "Hide completed tasks".
+    var hideCompletedTasks = false
+    /// Sync linked Reminders/Calendar items when MyThoughts becomes active.
+    var autoSyncWithApple = true
+    var version = TaskDisplaySettings.currentVersion
+
+    init() { }
+
+    private enum CodingKeys: String, CodingKey {
+        case showCompletionMarker, showProgress, showDueDate, showPriority, showResources
+        case hideCompletedTasks, autoSyncWithApple, version
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        showCompletionMarker = try container.decodeIfPresent(Bool.self, forKey: .showCompletionMarker) ?? true
+        if version >= 2 {
+            showProgress = try container.decodeIfPresent(Bool.self, forKey: .showProgress) ?? true
+            showDueDate = try container.decodeIfPresent(Bool.self, forKey: .showDueDate) ?? true
+            showPriority = try container.decodeIfPresent(Bool.self, forKey: .showPriority) ?? true
+        }
+        // Version 1 showed "0%" on every topic, so it was off by default; badges are now
+        // shown only where a task has data, so they start on.
+        showResources = try container.decodeIfPresent(Bool.self, forKey: .showResources) ?? true
+        hideCompletedTasks = try container.decodeIfPresent(Bool.self, forKey: .hideCompletedTasks) ?? false
+        autoSyncWithApple = try container.decodeIfPresent(Bool.self, forKey: .autoSyncWithApple) ?? true
+        self.version = TaskDisplaySettings.currentVersion
+    }
 }
 
 struct CanvasAppearance: Codable, Equatable {
@@ -5854,6 +7010,18 @@ struct CanvasAppearance: Codable, Equatable {
                 .body
             case .large:
                 .title3
+            }
+        }
+
+        /// macOS point sizes of `font` (callout / body / title3).
+        var pointSize: CGFloat {
+            switch self {
+            case .small:
+                12
+            case .medium:
+                13
+            case .large:
+                15
             }
         }
     }
@@ -6043,6 +7211,17 @@ struct CanvasAppearance: Codable, Equatable {
                 connection: Color.white.opacity(0.28),
                 shadow: .black.opacity(0.24)
             )
+        }
+    }
+}
+
+extension CanvasAppearance.NodeStyleOption {
+    /// The iThoughts shape a canvas-wide node style corresponds to.
+    var topicShape: TopicShape {
+        switch self {
+        case .roundedRectangle: .roundedRectangle
+        case .capsule: .pill
+        case .minimalUnderline: .underline
         }
     }
 }

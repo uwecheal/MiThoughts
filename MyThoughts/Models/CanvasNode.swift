@@ -145,6 +145,109 @@ enum NodeMarker: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// iThoughts topic shapes (`shape` attribute codes 0-12, see Docs/ITMZ_FORMAT.md).
+enum TopicShape: Int, CaseIterable, Codable, Identifiable {
+    case roundedRectangle = 0
+    case rectangle = 1
+    case ellipse = 2
+    case underline = 3
+    case none = 4
+    case squareBracket = 5
+    case roundBracket = 6
+    case circle = 7
+    case diamond = 8
+    case parallelogram = 9
+    case pill = 10
+    case square = 11
+    case triangle = 12
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .roundedRectangle: "Rounded Rectangle"
+        case .rectangle: "Rectangle"
+        case .ellipse: "Ellipse"
+        case .underline: "Underline"
+        case .none: "No Shape"
+        case .squareBracket: "Square Brackets"
+        case .roundBracket: "Round Brackets"
+        case .circle: "Circle"
+        case .diamond: "Diamond"
+        case .parallelogram: "Parallelogram"
+        case .pill: "Pill"
+        case .square: "Square"
+        case .triangle: "Triangle"
+        }
+    }
+}
+
+/// Per-topic appearance (iThoughts `color`, `shape`, `text-size`, `boundary`, topic image).
+struct TopicStyle: Equatable, Codable {
+    /// Fill colour as `RRGGBB` (no `#`), like iThoughts. nil = inherit / theme default.
+    var colorHex: String?
+    /// nil = use the canvas node style.
+    var shape: TopicShape?
+    var textSize: Double?
+    var hasBoundary: Bool
+    var imageData: Data?
+    var imageName: String?
+    /// Displayed image width in points (iThoughts `image-width`).
+    var imageWidth: Double?
+
+    init(
+        colorHex: String? = nil,
+        shape: TopicShape? = nil,
+        textSize: Double? = nil,
+        hasBoundary: Bool = false,
+        imageData: Data? = nil,
+        imageName: String? = nil,
+        imageWidth: Double? = nil
+    ) {
+        self.colorHex = colorHex
+        self.shape = shape
+        self.textSize = textSize
+        self.hasBoundary = hasBoundary
+        self.imageData = imageData
+        self.imageName = imageName
+        self.imageWidth = imageWidth
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex)
+        shape = try container.decodeIfPresent(TopicShape.self, forKey: .shape)
+        textSize = try container.decodeIfPresent(Double.self, forKey: .textSize)
+        hasBoundary = try container.decodeIfPresent(Bool.self, forKey: .hasBoundary) ?? false
+        imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
+        imageName = try container.decodeIfPresent(String.self, forKey: .imageName)
+        imageWidth = try container.decodeIfPresent(Double.self, forKey: .imageWidth)
+    }
+
+    var isDefault: Bool { self == TopicStyle() }
+}
+
+/// Values last agreed between a topic and its Apple Reminder / Calendar event.
+/// Sync compares both sides against this baseline to see which side changed (3-way merge).
+struct AppleSyncBaseline: Equatable, Codable {
+    var title: String
+    var notes: String
+    var startDate: Date?
+    var dueDate: Date?
+    var isCompleted: Bool
+    var priority: TaskPriority
+    var syncedAt: Date
+}
+
+struct AppleSyncState: Equatable, Codable {
+    var reminder: AppleSyncBaseline?
+    var event: AppleSyncBaseline?
+}
+
 struct CanvasNode: Identifiable, Equatable, Codable {
     let id: UUID
     var title: String
@@ -169,6 +272,13 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     var sortIndex: Double
     var parentID: UUID?
     var isCollapsed: Bool
+    var style: TopicStyle
+    /// People or teams assigned to the task (iThoughts `resources`).
+    var resources: [String]
+    var appleSync: AppleSyncState?
+    /// For floating topics imported from iThoughts: the topic they float beside.
+    /// They are free roots here (no parent line) but are written back under this topic.
+    var floatingAnchorID: UUID?
 
     init(
         id: UUID,
@@ -193,7 +303,11 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         height: CGFloat,
         sortIndex: Double = 0,
         parentID: UUID? = nil,
-        isCollapsed: Bool = false
+        isCollapsed: Bool = false,
+        style: TopicStyle = TopicStyle(),
+        floatingAnchorID: UUID? = nil,
+        resources: [String] = [],
+        appleSync: AppleSyncState? = nil
     ) {
         self.id = id
         self.title = title
@@ -218,6 +332,10 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.sortIndex = sortIndex
         self.parentID = parentID
         self.isCollapsed = isCollapsed
+        self.style = style
+        self.floatingAnchorID = floatingAnchorID
+        self.resources = resources
+        self.appleSync = appleSync
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -244,6 +362,10 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         case sortIndex
         case parentID
         case isCollapsed
+        case style
+        case floatingAnchorID
+        case resources
+        case appleSync
     }
 
     init(from decoder: Decoder) throws {
@@ -275,5 +397,9 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         sortIndex = try container.decodeIfPresent(Double.self, forKey: .sortIndex) ?? 0
         parentID = try container.decodeIfPresent(UUID.self, forKey: .parentID)
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
+        style = try container.decodeIfPresent(TopicStyle.self, forKey: .style) ?? TopicStyle()
+        floatingAnchorID = try container.decodeIfPresent(UUID.self, forKey: .floatingAnchorID)
+        resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        appleSync = try container.decodeIfPresent(AppleSyncState.self, forKey: .appleSync)
     }
 }
