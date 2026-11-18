@@ -105,6 +105,9 @@ private struct TreeWriter {
     private var summaryRange: [UUID: (first: UUID, last: UUID)] = [:]
     /// For roots that become floating topics: the topic they are written under.
     private var floatingParent: [UUID: UUID] = [:]
+    /// Original topic uuid -> its index among its parent's children, so floating
+    /// topics go back between their siblings where iThoughts had them.
+    private var originalChildIndex: [String: Int] = [:]
 
     init(nodes: [CanvasNode], summaries: [CanvasSummary], session: ItmzEditingSession?, document: ItmzDocument) {
         self.nodes = nodes
@@ -126,6 +129,15 @@ private struct TreeWriter {
             }
         }
         originalTopics = originals
+        if session != nil {
+            var stack = document.topicTree()
+            while let topic = stack.popLast() {
+                for (position, child) in topic.children.enumerated() {
+                    originalChildIndex[child.uuid] = position
+                }
+                stack.append(contentsOf: topic.children)
+            }
+        }
         originalTopLevel = session == nil ? [] : Set(document.topLevelTopics.compactMap { $0["uuid"] })
 
         for node in nodes {
@@ -215,7 +227,7 @@ private struct TreeWriter {
             }
             let siblings = childrenByParent[summaryNode.parentID ?? UUID()] ?? []
             let members = siblings.filter { summary.summarizedNodeIDs.contains($0.id) }
-            guard members.count >= 2, let first = members.first, let last = members.last else {
+            guard let first = members.first, let last = members.last else {
                 continue
             }
             summaryRange[summaryNode.id] = (first.id, last.id)
@@ -234,15 +246,23 @@ private struct TreeWriter {
             position = (Double(nodeCenter.x - origin.x), Double(nodeCenter.y - origin.y))
         }
 
-        var attributes = topicAttributes(for: node, original: originalTopics[uuid], isFloating: isFloating)
+        // A top-level topic can carry floating="1" in iThoughts files; it means
+        // nothing for a top-level topic, so keep whatever the file had.
+        let writesFloating = parent == nil ? originalTopics[uuid]?["floating"] == "1" : isFloating
+        var attributes = topicAttributes(for: node, original: originalTopics[uuid], isFloating: writesFloating)
         attributes["uuid"] = uuid
         attributes["position"] = ItmzFormat.formatPosition(x: position.x, y: position.y)
 
         var children = (childrenByParent[node.id] ?? []).map {
             build($0, parent: node, isFloating: false, floatingChildren: floatingChildren)
         }
-        children += (floatingChildren[node.id] ?? []).map {
-            build($0, parent: node, isFloating: true, floatingChildren: floatingChildren)
+        // Floating topics return to their original slot when they had one, else go last.
+        let floating = (floatingChildren[node.id] ?? []).map { child -> (Int, ItmzTopicNode) in
+            let uuid = topicUUIDs[child.id] ?? child.id.uuidString
+            return (originalChildIndex[uuid] ?? Int.max, build(child, parent: node, isFloating: true, floatingChildren: floatingChildren))
+        }
+        for (slot, topic) in floating.sorted(by: { $0.0 < $1.0 }) {
+            children.insert(topic, at: min(slot, children.count))
         }
         return ItmzTopicNode(attributes: attributes, children: children)
     }
@@ -382,9 +402,10 @@ private struct TreeWriter {
     mutating func relationshipAttributes(_ relationships: [CanvasRelationship]) -> [[String: String]] {
         var originals: [String: [String: String]] = [:]
         if session != nil {
-            for attributes in document.relationshipAttributes() {
-                if let uuid = attributes["uuid"], originals[uuid] == nil {
-                    originals[uuid] = attributes
+            for (position, attributes) in document.relationshipAttributes().enumerated() {
+                let key = ItmzDocument.relationshipKey(attributes, index: position)
+                if originals[key] == nil {
+                    originals[key] = attributes
                 }
             }
         }

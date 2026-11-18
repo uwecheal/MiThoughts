@@ -63,10 +63,14 @@ enum ConnectionLinePathBuilder {
         )
     }
 
+    /// Right-angle line whose vertical trunk sits just outside the parent, as in
+    /// iThoughts: siblings then share one trunk however far apart they are.
     private static func addElbowConnection(from start: CGPoint, to end: CGPoint, to path: inout Path) {
-        let midpointX = (start.x + end.x) / 2
-        path.addLine(to: CGPoint(x: midpointX, y: start.y))
-        path.addLine(to: CGPoint(x: midpointX, y: end.y))
+        let dx = end.x - start.x
+        let direction: CGFloat = dx >= 0 ? 1 : -1
+        let trunkX = start.x + direction * min(18, abs(dx) / 2)
+        path.addLine(to: CGPoint(x: trunkX, y: start.y))
+        path.addLine(to: CGPoint(x: trunkX, y: end.y))
         path.addLine(to: end)
     }
 

@@ -194,6 +194,9 @@ struct TopicStyle: Equatable, Codable {
     var imageName: String?
     /// Displayed image width in points (iThoughts `image-width`).
     var imageWidth: Double?
+    /// iThoughts callout (`callout="1"`): a note bubble attached to its parent,
+    /// drawn with a dashed link and not counted as a branch.
+    var isCallout = false
 
     init(
         colorHex: String? = nil,
@@ -202,7 +205,8 @@ struct TopicStyle: Equatable, Codable {
         hasBoundary: Bool = false,
         imageData: Data? = nil,
         imageName: String? = nil,
-        imageWidth: Double? = nil
+        imageWidth: Double? = nil,
+        isCallout: Bool = false
     ) {
         self.colorHex = colorHex
         self.shape = shape
@@ -211,10 +215,11 @@ struct TopicStyle: Equatable, Codable {
         self.imageData = imageData
         self.imageName = imageName
         self.imageWidth = imageWidth
+        self.isCallout = isCallout
     }
 
     private enum CodingKeys: String, CodingKey {
-        case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth
+        case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth, isCallout
     }
 
     init(from decoder: Decoder) throws {
@@ -226,6 +231,7 @@ struct TopicStyle: Equatable, Codable {
         imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
         imageName = try container.decodeIfPresent(String.self, forKey: .imageName)
         imageWidth = try container.decodeIfPresent(Double.self, forKey: .imageWidth)
+        isCallout = try container.decodeIfPresent(Bool.self, forKey: .isCallout) ?? false
     }
 
     var isDefault: Bool { self == TopicStyle() }

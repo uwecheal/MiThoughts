@@ -1,9 +1,19 @@
 import SwiftUI
 import AppKit
+import Combine
 import UniformTypeIdentifiers
 
 struct InfiniteCanvasView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
+
+    /// The file this window shows, shared with the window (restoration, de-duplication).
+    @Binding private var windowFileURL: URL?
+    /// Identity of this window's map in `MapWindowRegistry`.
+    @State private var windowID = UUID()
+    @State private var windowRef = WindowRef()
+    /// Only one window restores and writes the crash-safe autosave.
+    @State private var ownsAutosave: Bool
 
     @State private var panOffset: CGSize = .zero
     @State private var zoomScale: CGFloat = 1.0
@@ -31,7 +41,7 @@ struct InfiniteCanvasView: View {
     @State private var isDraggingNode = false
     @State private var draggedNodeID: CanvasNode.ID?
     @State private var dropTargetNodeID: CanvasNode.ID?
-    @State private var appearance = CanvasAppearance.load()
+    @State private var appearance: CanvasAppearance
     @State private var notePanelSettings: NotePanelSettings
     @State private var outlineSettings: OutlineSettings
     @State private var outlineItems: [OutlineItem]
@@ -77,8 +87,13 @@ struct InfiniteCanvasView: View {
     private let childVerticalSpacing: CGFloat = 90
     private let showsDebugOverlay = false
 
-    init() {
-        let document = NodeStore.loadDocument()
+    init(windowFileURL: Binding<URL?> = .constant(nil)) {
+        _windowFileURL = windowFileURL
+        // The first window opened without a file restores the autosaved map;
+        // every other window starts empty (or with its own file).
+        let owns = windowFileURL.wrappedValue == nil && MainActor.assumeIsolated { AutosaveOwnership.claim() }
+        _ownsAutosave = State(initialValue: owns)
+        let document = owns ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
         var notePanelSettings = NotePanelSettings.load()
         notePanelSettings.position = .right
         var loadedNodes = document.nodes
@@ -90,10 +105,15 @@ struct InfiniteCanvasView: View {
         _relationships = State(initialValue: document.relationships.filter {
             loadedNodeIDs.contains($0.fromNodeID) && loadedNodeIDs.contains($0.toNodeID)
         })
+        // App-wide Canvas settings, plus the open map's own iThoughts style.
+        var initialAppearance = CanvasAppearance.load()
+        initialAppearance.mapStyle = document.canvasSettings.mapStyle
+        _appearance = State(initialValue: initialAppearance)
         let initialDerivedData = CanvasDerivedData(
             nodes: loadedNodes,
             connections: loadedConnections,
-            hidesCompletedTasks: CanvasAppearance.load().taskDisplay.hideCompletedTasks
+            hidesCompletedTasks: initialAppearance.taskDisplay.hideCompletedTasks,
+            mapStyle: initialAppearance.activeMapStyle
         )
 
         _nodes = State(initialValue: loadedNodes)
@@ -139,7 +159,8 @@ struct InfiniteCanvasView: View {
             }
 
             let summarizedNodeIDs = summary.summarizedNodeIDs.filter { validNodeIDs.contains($0) }
-            guard summarizedNodeIDs.count >= 2 else {
+            // iThoughts allows a summary over a single topic.
+            guard !summarizedNodeIDs.isEmpty else {
                 return nil
             }
 
@@ -418,7 +439,7 @@ struct InfiniteCanvasView: View {
                 appearance.backgroundColor(for: colorScheme)
                     .ignoresSafeArea()
 
-                if appearance.showGrid {
+                if appearance.showsGrid {
                     grid(in: geometry.size)
                 }
 
@@ -434,8 +455,12 @@ struct InfiniteCanvasView: View {
 
                 relationshipLayer(in: geometry.size)
 
-                ForEach(derivedData.visibleNodes) { node in
-                    canvasNodeView(for: binding(for: node.id))
+                let nodeIndexByID = nodeIndexLookup()
+                let relationshipMenus = relationshipMenuItemsByNode()
+                ForEach(nodesInViewport(geometry.size)) { node in
+                    if let index = nodeIndexByID[node.id] {
+                        canvasNodeView(for: $nodes[index], relationshipMenuItems: relationshipMenus[node.id] ?? [])
+                    }
                 }
 
                 if relationshipSourceID != nil {
@@ -509,7 +534,11 @@ struct InfiniteCanvasView: View {
             }
             .background(
                 KeyboardEventMonitor { event in
-                    handleKeyEvent(event)
+                    // The monitor sees every window's keys; act only on our own.
+                    guard isEventForThisWindow(event) else {
+                        return false
+                    }
+                    return handleKeyEvent(event)
                 }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -521,13 +550,29 @@ struct InfiniteCanvasView: View {
             .simultaneousGesture(canvasDoubleClickGesture)
             .focusable()
             .focused($isCanvasFocused)
+            .background(
+                WindowAccessor { window in
+                    MapWindowRegistry.shared.attach(window, to: windowID)
+                    updateWindowTitle()
+                }
+            )
             .onAppear {
+                registerWindow()
                 viewportSize = geometry.size
                 centerInitialContentIfNeeded(in: geometry.size)
                 isCanvasFocused = true
                 updateWindowTitle()
                 DispatchQueue.main.async {
+                    if let url = windowFileURL, currentFileURL == nil, nodes.isEmpty {
+                        openMyThoughtsFile(at: url)
+                    }
                     openPendingExternalFile()
+                }
+            }
+            .onDisappear {
+                MapWindowRegistry.shared.unregister(windowID)
+                if ownsAutosave {
+                    AutosaveOwnership.release()
                 }
             }
             .onChange(of: geometry.size) { _, newSize in
@@ -535,6 +580,16 @@ struct InfiniteCanvasView: View {
                 centerInitialContentIfNeeded(in: newSize)
             }
             .onChange(of: nodes) { _, _ in
+                // While dragging only positions change: patch them instead of
+                // rebuilding visibility, colours, roll-ups and the outline every frame.
+                if isDraggingNode, !dragOriginalNodePositions.isEmpty {
+                    derivedData.updatePositions(
+                        from: nodes,
+                        movedIDs: dragOriginalNodePositions.keys,
+                        connections: connections
+                    )
+                    return
+                }
                 refreshDerivedData()
                 validateFocusModeState()
                 if isShowingSearchPanel {
@@ -544,8 +599,11 @@ struct InfiniteCanvasView: View {
             .onChange(of: connections) { _, _ in
                 refreshDerivedData()
             }
-            .onChange(of: currentFileURL) { _, _ in
+            .onChange(of: currentFileURL) { _, newValue in
                 updateWindowTitle()
+                if windowFileURL != newValue {
+                    windowFileURL = newValue
+                }
             }
             .onChange(of: isDirty) { _, _ in
                 updateWindowTitle()
@@ -553,77 +611,77 @@ struct InfiniteCanvasView: View {
             .onChange(of: isShowingStartScreen) { _, _ in
                 updateWindowTitle()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.newMap)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.newMap)) { _ in
                 _ = newMap()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.newFromTemplate)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.newFromTemplate)) { _ in
                 showTemplateChooser()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.showStartScreen)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.showStartScreen)) { _ in
                 showStartScreen()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.open)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.open)) { _ in
                 openMyThoughtsFile()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.openRecent)) { notification in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.openRecent)) { notification in
                 if let url = notification.object as? URL {
                     openRecentFile(url)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.save)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.save)) { _ in
                 _ = saveCurrentFile()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.saveAs)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.saveAs)) { _ in
                 _ = saveCurrentFileAs()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportPDF)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportPDF)) { _ in
                 exportMapAsPDF()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportPNG)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportPNG)) { _ in
                 exportMapAsPNG()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.printMap)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.printMap)) { _ in
                 printMap()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsViewCommand.toggleOutline)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.toggleOutline)) { _ in
                 toggleOutlineView()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportITMZ)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportITMZ)) { _ in
                 exportITMZFile()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportOutline)) { notification in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportOutline)) { notification in
                 if let raw = notification.object as? String, let format = OutlineFormat(rawValue: raw) {
                     exportOutlineFile(format)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.importITMZ)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.importITMZ)) { _ in
                 importIThoughtsFile()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.openURL)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsFileCommand.openURL)) { _ in
                 openPendingExternalFile()
             }
-            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.perform)) { notification in
+            .onReceive(commandPublisher(for: TaskCommand.perform)) { notification in
                 if let action = notification.object as? TaskAction {
                     applyTaskAction(action, to: selectedNodeIDs.isEmpty ? Set(selectedNodeID.map { [$0] } ?? []) : selectedNodeIDs)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleTaskList)) { _ in
+            .onReceive(commandPublisher(for: TaskCommand.toggleTaskList)) { _ in
                 isShowingTaskList.toggle()
             }
-            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.syncApple)) { _ in
+            .onReceive(commandPublisher(for: TaskCommand.syncApple)) { _ in
                 syncWithApple(isAutomatic: false)
             }
-            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleHideCompleted)) { _ in
+            .onReceive(commandPublisher(for: TaskCommand.toggleHideCompleted)) { _ in
                 updateAppearance { $0.taskDisplay.hideCompletedTasks.toggle() }
                 refreshDerivedData()
             }
-            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            .onReceive(commandPublisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 syncWithApple(isAutomatic: true)
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
                 addRelationshipFromSelection()
             }
-            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsBranchCommand.perform)) { notification in
+            .onReceive(commandPublisher(for: MyThoughtsBranchCommand.perform)) { notification in
                 if let operation = notification.object as? BranchOperation {
                     performBranchOperationOnSelected(operation)
                 }
@@ -692,7 +750,8 @@ struct InfiniteCanvasView: View {
             nodes: nodes,
             connections: connections,
             focusedNodeID: activeFocusNodeID,
-            hidesCompletedTasks: appearance.taskDisplay.hideCompletedTasks
+            hidesCompletedTasks: appearance.taskDisplay.hideCompletedTasks,
+            mapStyle: appearance.activeMapStyle
         )
         derivedData = updatedDerivedData
         outlineItems = Self.buildOutlineItems(
@@ -1357,11 +1416,6 @@ struct InfiniteCanvasView: View {
     private func openMyThoughtsFile() {
         isShowingAppearancePopover = false
 
-        guard confirmUnsavedChangesIfNeeded() else {
-            focusCanvas()
-            return
-        }
-
         let openPanel = NSOpenPanel()
         openPanel.title = "Open Map"
         openPanel.message = "Open a MyThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
@@ -1377,7 +1431,8 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        openMyThoughtsFile(at: url)
+        // Opens in this window when it is empty, otherwise in a window of its own.
+        MapWindowRegistry.shared.open(url)
     }
 
     private func openRecentFile(_ url: URL) {
@@ -1388,12 +1443,7 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        guard confirmUnsavedChangesIfNeeded() else {
-            focusCanvas()
-            return
-        }
-
-        openMyThoughtsFile(at: url)
+        MapWindowRegistry.shared.open(url)
     }
 
     private func openMyThoughtsFile(at url: URL) {
@@ -1436,6 +1486,7 @@ struct InfiniteCanvasView: View {
         summaries = []
         relationships = []
         itmzSession = nil
+        appearance.mapStyle = nil
         relationshipSourceID = nil
         clearSelection()
         editingNodeID = nil
@@ -1504,6 +1555,7 @@ struct InfiniteCanvasView: View {
         summaries = []
         relationships = []
         itmzSession = nil
+        appearance.mapStyle = nil
 
         clearSelection()
         editingNodeID = nil
@@ -1621,15 +1673,13 @@ struct InfiniteCanvasView: View {
         }
     }
 
-    /// The map window, also when the app is not frontmost (keyWindow is nil then).
-    private static var mainWindow: NSWindow? {
-        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeMain }
-    }
-
     private func updateWindowTitle() {
+        let window = windowRef.window
         guard !isShowingStartScreen else {
             DispatchQueue.main.async {
-                Self.mainWindow?.title = "MyThoughts"
+                window?.title = "MyThoughts"
+                window?.representedURL = nil
+                window?.isDocumentEdited = false
             }
             return
         }
@@ -1639,8 +1689,12 @@ struct InfiniteCanvasView: View {
         } ?? "Untitled"
         let title = isDirty ? "\(baseTitle) *" : baseTitle
 
+        let fileURL = currentFileURL
+        let edited = isDirty
         DispatchQueue.main.async {
-            Self.mainWindow?.title = title
+            window?.title = title
+            window?.representedURL = fileURL
+            window?.isDocumentEdited = edited
         }
     }
 
@@ -1855,7 +1909,7 @@ struct InfiniteCanvasView: View {
                 return nodesByID[nodeID]
             }
 
-            guard summarizedNodes.count >= 2 else {
+            guard !summarizedNodes.isEmpty else {
                 return nil
             }
 
@@ -1874,7 +1928,7 @@ struct InfiniteCanvasView: View {
     private func visibleSummaries(for visibleIDs: Set<CanvasNode.ID>) -> [CanvasSummary] {
         summaries.filter { summary in
             visibleIDs.contains(summary.summaryNodeID) &&
-            summary.summarizedNodeIDs.filter { visibleIDs.contains($0) }.count >= 2
+            summary.summarizedNodeIDs.contains { visibleIDs.contains($0) }
         }
     }
 
@@ -1937,16 +1991,50 @@ struct InfiniteCanvasView: View {
         }
     }
 
-    /// Opens a file handed over by Finder, if one is waiting.
+    /// Opens files handed over by Finder before any window was ready.
     private func openPendingExternalFile() {
-        guard let url = ExternalOpenQueue.takeLatest() else {
+        guard MapWindowRegistry.shared.isActive(windowID) else {
             return
         }
-        if currentFileURL?.standardizedFileURL == url.standardizedFileURL && !isDirty {
-            isShowingStartScreen = false
-            return
+        for url in ExternalOpenQueue.takeAll() {
+            if currentFileURL?.standardizedFileURL == url.standardizedFileURL && !isDirty {
+                isShowingStartScreen = false
+                continue
+            }
+            MapWindowRegistry.shared.open(url)
         }
-        openRecentFile(url)
+    }
+
+    // MARK: Windows
+
+    private func registerWindow() {
+        WindowOpener.action = openWindow
+        MapWindowRegistry.shared.register(MapWindowRegistry.Entry(
+            id: windowID,
+            windowRef: windowRef,
+            ownsAutosave: ownsAutosave,
+            fileURL: { currentFileURL },
+            isDirty: { isDirty },
+            isBlank: { nodes.isEmpty || (isShowingStartScreen && !isDirty && currentFileURL != nil) },
+            openHere: { url in openMyThoughtsFile(at: url) },
+            confirmClose: { confirmUnsavedChangesIfNeeded() }
+        ))
+    }
+
+    /// Menu commands are broadcast; only the front map window acts on them.
+    private func commandPublisher(for name: Notification.Name) -> AnyPublisher<Notification, Never> {
+        let id = windowID
+        return NotificationCenter.default.publisher(for: name)
+            .filter { _ in MainActor.assumeIsolated { MapWindowRegistry.shared.isActive(id) } }
+            .eraseToAnyPublisher()
+    }
+
+    private func isEventForThisWindow(_ event: NSEvent) -> Bool {
+        if let window = event.window, MapWindowRegistry.shared.isMapWindow(window) {
+            return window === windowRef.window
+        }
+        // Panels and popovers: the front map handles them.
+        return MapWindowRegistry.shared.isActive(windowID)
     }
 
     // MARK: iThoughts (.itmz) files
@@ -1979,6 +2067,7 @@ struct InfiniteCanvasView: View {
             summaries = repairResult.summaries
             relationships = result.relationships
             itmzSession = opened.session
+            appearance.mapStyle = result.mapStyle
 
             clearSelection()
             editingNodeID = nil
@@ -2119,7 +2208,7 @@ struct InfiniteCanvasView: View {
 
     /// All resource names used in the map, for the Task ▸ Resources menu.
     private var knownResources: [String] {
-        Array(Set(nodes.flatMap(\.resources))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        derivedData.knownResources
     }
 
     private func applyTaskAction(_ action: TaskAction, to ids: Set<CanvasNode.ID>) {
@@ -2226,6 +2315,7 @@ struct InfiniteCanvasView: View {
             summaries = []
             relationships = result.relationships
             itmzSession = nil
+            appearance.mapStyle = nil
 
             clearSelection()
             editingNodeID = nil
@@ -2660,6 +2750,7 @@ struct InfiniteCanvasView: View {
         connections = repairResult.connections
         summaries = repairResult.summaries
         relationships = importResult.relationships
+        appearance.mapStyle = importResult.mapStyle
         documentCreatedAt = Date()
 
         clearSelection()
@@ -3357,7 +3448,7 @@ struct InfiniteCanvasView: View {
             }
 
             let remappedSummarizedNodeIDs = summary.summarizedNodeIDs.compactMap { idMap[$0] }
-            guard remappedSummarizedNodeIDs.count >= 2 else {
+            guard !remappedSummarizedNodeIDs.isEmpty else {
                 return nil
             }
 
@@ -3723,18 +3814,13 @@ struct InfiniteCanvasView: View {
         let visibleIDs = visibleNodeIDs
 
         dropTargetNodeID = nodes.last { targetNode in
-            guard visibleIDs.contains(targetNode.id),
-                  canMakeParent(childID: draggedNodeID, newParentID: targetNode.id) else {
+            guard !dragOriginalNodePositions.keys.contains(targetNode.id),
+                  visibleIDs.contains(targetNode.id),
+                  CGRect(x: targetNode.x, y: targetNode.y, width: targetNode.width, height: targetNode.height)
+                    .contains(draggedCenter) else {
                 return false
             }
-
-            return CGRect(
-                x: targetNode.x,
-                y: targetNode.y,
-                width: targetNode.width,
-                height: targetNode.height
-            )
-            .contains(draggedCenter)
+            return canMakeParent(childID: draggedNodeID, newParentID: targetNode.id)
         }?.id
     }
 
@@ -3744,6 +3830,7 @@ struct InfiniteCanvasView: View {
             dropTargetNodeID = nil
             isDraggingNode = false
             dragOriginalNodePositions.removeAll()
+            refreshDerivedData()
             focusCanvas()
         }
 
@@ -3763,7 +3850,16 @@ struct InfiniteCanvasView: View {
             selectSingleNode(nodeID)
         }
 
-        let draggableIDs = selectedVisibleNodeIDs()
+        // Like iThoughts, a dragged topic carries its whole branch, including
+        // folded children (their positions are absolute).
+        var draggableIDs = selectedVisibleNodeIDs()
+        var stack = Array(draggableIDs)
+        while let parentID = stack.popLast() {
+            for child in derivedData.childrenByParent[parentID] ?? [] where !draggableIDs.contains(child.id) {
+                draggableIDs.insert(child.id)
+                stack.append(child.id)
+            }
+        }
         dragOriginalNodePositions = Dictionary(
             uniqueKeysWithValues: nodes.compactMap { node in
                 guard draggableIDs.contains(node.id) else {
@@ -4005,7 +4101,7 @@ struct InfiniteCanvasView: View {
     private func saveNodes(markDirty shouldMarkDirty: Bool = true) {
         pruneDanglingRelationships()
         refreshDerivedData()
-        NodeStore.saveDocument(
+        if ownsAutosave { NodeStore.saveDocument(
             nodes: nodes,
             connections: connections,
             summaries: summaries,
@@ -4013,7 +4109,7 @@ struct InfiniteCanvasView: View {
             canvasSettings: appearance,
             notePanelSettings: notePanelSettings,
             createdAt: documentCreatedAt
-        )
+        ) }
         if shouldMarkDirty {
             markDirty()
         }
@@ -4825,13 +4921,35 @@ struct InfiniteCanvasView: View {
 
             Divider()
 
+            if let mapStyle = appearance.mapStyle {
+                Toggle(
+                    "iThoughts Map Style",
+                    isOn: Binding(
+                        get: { mapStyle.isEnabled },
+                        set: { newValue in
+                            updateAppearance {
+                                $0.mapStyle?.isEnabled = newValue
+                            }
+                            refreshDerivedData()
+                        }
+                    )
+                )
+                .help("Draw this map with its own iThoughts lines, canvas and branch colours.")
+            }
+
+            // With an iThoughts style on, this changes the map's own branch lines.
             Picker(
                 "Connection",
                 selection: Binding(
-                    get: { appearance.connectionLineStyle },
+                    get: { appearance.lineStyle(level1: false) },
                     set: { newValue in
                         updateAppearance {
-                            $0.connectionLineStyle = newValue
+                            if $0.activeMapStyle != nil {
+                                $0.mapStyle?.level1LineStyle = newValue
+                                $0.mapStyle?.levelNLineStyle = newValue
+                            } else {
+                                $0.connectionLineStyle = newValue
+                            }
                         }
                     }
                 )
@@ -4999,7 +5117,68 @@ struct InfiniteCanvasView: View {
         .frame(width: 260)
     }
 
-    private func canvasNodeView(for node: Binding<CanvasNode>) -> some View {
+    /// Topics off screen are not built as views at all, which keeps panning,
+    /// zooming and dragging smooth on large maps. The selection and the topic
+    /// being edited or dragged always stay alive (focus, gestures).
+    private func nodesInViewport(_ size: CGSize) -> [CanvasNode] {
+        let nodes = derivedData.visibleNodes
+        guard nodes.count > 60, size.width > 0, size.height > 0 else {
+            return nodes
+        }
+        let margin: CGFloat = 160
+        let topLeft = screenToCanvasPosition(CGPoint(x: -margin, y: -margin))
+        let bottomRight = screenToCanvasPosition(CGPoint(x: size.width + margin, y: size.height + margin))
+        let visibleRect = CGRect(
+            x: topLeft.x,
+            y: topLeft.y,
+            width: bottomRight.x - topLeft.x,
+            height: bottomRight.y - topLeft.y
+        )
+        return nodes.filter { node in
+            visibleRect.intersects(CGRect(x: node.x, y: node.y, width: node.width, height: node.height))
+                || selectedNodeIDs.contains(node.id)
+                || node.id == editingNodeID
+                || node.id == draggedNodeID
+        }
+    }
+
+    /// Built once per render pass so each topic view is an O(1) lookup.
+    private func nodeIndexLookup() -> [CanvasNode.ID: Int] {
+        var result: [CanvasNode.ID: Int] = [:]
+        result.reserveCapacity(nodes.count)
+        for index in nodes.indices where result[nodes[index].id] == nil {
+            result[nodes[index].id] = index
+        }
+        return result
+    }
+
+    private func relationshipMenuItemsByNode() -> [CanvasNode.ID: [RelationshipMenuItem]] {
+        guard !relationships.isEmpty else {
+            return [:]
+        }
+        var titles: [CanvasNode.ID: String] = [:]
+        for node in nodes {
+            let title = TopicText.plain(node.title).trimmingCharacters(in: .whitespacesAndNewlines)
+            titles[node.id] = title.isEmpty ? (node.style.imageData != nil ? "Image" : "Untitled") : String(title.prefix(60))
+        }
+        var result: [CanvasNode.ID: [RelationshipMenuItem]] = [:]
+        for relationship in relationships {
+            let label = relationship.label.isEmpty ? "" : " (\(relationship.label))"
+            let toTitle = titles[relationship.toNodeID] ?? "Missing topic"
+            let fromTitle = titles[relationship.fromNodeID] ?? "Missing topic"
+            result[relationship.fromNodeID, default: []].append(
+                RelationshipMenuItem(id: relationship.id, title: "→ \(toTitle)\(label)")
+            )
+            if relationship.toNodeID != relationship.fromNodeID {
+                result[relationship.toNodeID, default: []].append(
+                    RelationshipMenuItem(id: relationship.id, title: "← \(fromTitle)\(label)")
+                )
+            }
+        }
+        return result
+    }
+
+    private func canvasNodeView(for node: Binding<CanvasNode>, relationshipMenuItems: [RelationshipMenuItem]) -> some View {
         let wrappedNode = node.wrappedValue
         let screenPosition = canvasToScreenPosition(
             CGPoint(
@@ -5028,15 +5207,8 @@ struct InfiniteCanvasView: View {
             hasChildren: hasChildren(wrappedNode.id),
             fillHex: derivedData.effectiveColorHexByNodeID[wrappedNode.id],
             isRelationshipSource: relationshipSourceID == wrappedNode.id,
-            relationshipMenuItems: relationships
-                .filter { $0.fromNodeID == wrappedNode.id || $0.toNodeID == wrappedNode.id }
-                .map { relationship in
-                    let otherID = relationship.fromNodeID == wrappedNode.id ? relationship.toNodeID : relationship.fromNodeID
-                    let arrow = relationship.fromNodeID == wrappedNode.id ? "→" : "←"
-                    let label = relationship.label.isEmpty ? "" : " (\(relationship.label))"
-                    return RelationshipMenuItem(id: relationship.id, title: "\(arrow) \(relationshipEndTitle(otherID))\(label)")
-                },
-            knownResources: knownResources,
+            relationshipMenuItems: relationshipMenuItems,
+            knownResources: derivedData.knownResources,
             onStyleAction: { action in
                 applyTopicStyleAction(action, to: wrappedNode.id)
             },
@@ -5258,15 +5430,17 @@ struct InfiniteCanvasView: View {
             ConnectionSegment(
                 start: canvasToScreenPosition(segment.start),
                 end: canvasToScreenPosition(segment.end),
-                colorHex: segment.colorHex
+                colorHex: segment.colorHex,
+                isLevel1: segment.isLevel1,
+                isCallout: segment.isCallout
             )
         }
 
         return ConnectionLayerView(
             segments: segments,
-            lineStyle: appearance.connectionLineStyle,
+            appearance: appearance,
             lineColor: appearance.themeColors(for: colorScheme).connection,
-            lineWidth: appearance.connectionLineThickness.width
+            zoomScale: zoomScale
         )
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
@@ -5376,10 +5550,18 @@ private struct CanvasDerivedData {
     /// Own colour, else the nearest coloured ancestor's (iThoughts `inheritColor`).
     var effectiveColorHexByNodeID: [CanvasNode.ID: String] = [:]
     var boundaries: [(rect: CGRect, colorHex: String?)] = []
+    /// Every resource name used in the map, sorted (for the Task ▸ Resources menu).
+    var knownResources: [String] = []
 
     init() { }
 
-    init(nodes: [CanvasNode], connections: [CanvasConnection], focusedNodeID: CanvasNode.ID? = nil, hidesCompletedTasks: Bool = false) {
+    init(
+        nodes: [CanvasNode],
+        connections: [CanvasConnection],
+        focusedNodeID: CanvasNode.ID? = nil,
+        hidesCompletedTasks: Bool = false,
+        mapStyle: MapStyle? = nil
+    ) {
         let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         childrenByParent = Dictionary(grouping: nodes.compactMap { node -> CanvasNode? in
             guard node.parentID != nil else {
@@ -5401,7 +5583,11 @@ private struct CanvasDerivedData {
         )
         visibleNodes = nodes.filter { visibleNodeIDs.contains($0.id) }
         visibleNodesByID = Dictionary(visibleNodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        effectiveColorHexByNodeID = Self.effectiveColors(nodes: nodes, nodesByID: nodesByID)
+        effectiveColorHexByNodeID = mapStyle.map {
+            Self.styledColors(nodes: nodes, nodesByID: nodesByID, childrenByParent: childrenByParent, style: $0)
+        } ?? Self.effectiveColors(nodes: nodes, nodesByID: nodesByID)
+        knownResources = Array(Set(nodes.flatMap(\.resources)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         boundaries = Self.boundaries(
             visibleNodes: visibleNodes,
             visibleNodesByID: visibleNodesByID,
@@ -5426,9 +5612,116 @@ private struct CanvasDerivedData {
             return ConnectionSegment(
                 start: Self.connectionStartPoint(from: parentNode, to: childNode),
                 end: Self.connectionEndPoint(from: parentNode, to: childNode),
-                colorHex: effectiveColorHexByNodeID[childNode.id]
+                colorHex: effectiveColorHexByNodeID[childNode.id],
+                isLevel1: parentNode.parentID == nil && !childNode.style.isCallout,
+                isCallout: childNode.style.isCallout
             )
         }
+    }
+
+    /// Cheap per-frame update while topics are dragged: only positions of
+    /// `movedIDs` changed, so visibility, colours and roll-ups stay valid.
+    mutating func updatePositions<IDs: Sequence>(
+        from nodes: [CanvasNode],
+        movedIDs: IDs,
+        connections: [CanvasConnection]
+    ) where IDs.Element == CanvasNode.ID {
+        let movedSet = Set(movedIDs)
+        var moved: [CanvasNode.ID: CanvasNode] = [:]
+        moved.reserveCapacity(movedSet.count)
+        for node in nodes where movedSet.contains(node.id) {
+            moved[node.id] = node
+        }
+        guard !moved.isEmpty else {
+            return
+        }
+
+        for index in visibleNodes.indices {
+            if let node = moved[visibleNodes[index].id] {
+                visibleNodes[index] = node
+            }
+        }
+        for (id, node) in moved {
+            if visibleNodesByID[id] != nil {
+                visibleNodesByID[id] = node
+            }
+            if let parentID = node.parentID,
+               var siblings = childrenByParent[parentID],
+               let siblingIndex = siblings.firstIndex(where: { $0.id == id }) {
+                siblings[siblingIndex] = node
+                childrenByParent[parentID] = siblings
+            }
+        }
+
+        visibleConnectionSegments = connections.compactMap { connection in
+            guard let parentNode = visibleNodesByID[connection.fromNodeID],
+                  let childNode = visibleNodesByID[connection.toNodeID] else {
+                return nil
+            }
+            return ConnectionSegment(
+                start: Self.connectionStartPoint(from: parentNode, to: childNode),
+                end: Self.connectionEndPoint(from: parentNode, to: childNode),
+                colorHex: effectiveColorHexByNodeID[childNode.id],
+                isLevel1: parentNode.parentID == nil && !childNode.style.isCallout,
+                isCallout: childNode.style.isCallout
+            )
+        }
+        if !boundaries.isEmpty {
+            boundaries = Self.boundaries(
+                visibleNodes: visibleNodes,
+                visibleNodesByID: visibleNodesByID,
+                childrenByParent: childrenByParent,
+                colors: effectiveColorHexByNodeID
+            )
+        }
+    }
+
+    /// Colours as iThoughts draws them for a styled map: own colour, else the
+    /// rainbow colour of a main branch, else the level colour, else inherited.
+    private static func styledColors(
+        nodes: [CanvasNode],
+        nodesByID: [CanvasNode.ID: CanvasNode],
+        childrenByParent: [CanvasNode.ID: [CanvasNode]],
+        style: MapStyle
+    ) -> [CanvasNode.ID: String] {
+        var result: [CanvasNode.ID: String] = [:]
+        var stack: [(node: CanvasNode, depth: Int, color: String?)] = []
+        for node in nodes where node.parentID.map({ nodesByID[$0] == nil }) ?? true {
+            let floatingDefault = style.rainbow ? style.rainbowStartHex : style.colorHex(forLevel: 1)
+            let color = node.style.colorHex
+                ?? (node.floatingAnchorID != nil ? floatingDefault : style.colorHex(forLevel: 0))
+            stack.append((node, 0, color))
+        }
+        var visited = Set<CanvasNode.ID>()
+        while let (node, depth, color) = stack.popLast() {
+            guard visited.insert(node.id).inserted else {
+                continue
+            }
+            if let color {
+                result[node.id] = color
+            }
+            let children = (childrenByParent[node.id] ?? []).sorted { $0.sortIndex < $1.sortIndex }
+            // Floating topics don't take a slot on the colour wheel; they get the start colour.
+            let branches = children.filter { $0.floatingAnchorID == nil && !$0.style.isCallout }
+            for child in children {
+                var childColor = child.style.colorHex
+                if childColor == nil, depth == 0, style.rainbow {
+                    if let index = branches.firstIndex(where: { $0.id == child.id }) {
+                        childColor = style.rainbowColorHex(index: index, count: branches.count)
+                    } else {
+                        childColor = style.rainbowStartHex
+                    }
+                }
+                if childColor == nil {
+                    childColor = style.colorHex(forLevel: depth + 1)
+                }
+                if childColor == nil, style.inheritColor, depth > 0 || !style.rainbow {
+                    childColor = color
+                }
+                stack.append((child, depth + 1, childColor))
+            }
+        }
+        return result
     }
 
     private static func effectiveColors(
@@ -5635,6 +5928,10 @@ private struct ConnectionSegment {
     var start: CGPoint
     var end: CGPoint
     var colorHex: String? = nil
+    /// Line leaving a central (root) topic: iThoughts styles these separately.
+    var isLevel1 = false
+    /// Link to a callout bubble: drawn dashed.
+    var isCallout = false
 }
 
 private struct SummaryRenderItem {
@@ -5646,24 +5943,46 @@ private struct SummaryRenderItem {
 
 private struct ConnectionLayerView: View {
     var segments: [ConnectionSegment]
-    var lineStyle: CanvasAppearance.ConnectionLineStyle
+    var appearance: CanvasAppearance
     var lineColor: Color
-    var lineWidth: CGFloat
+    var zoomScale: CGFloat
+
+    private struct GroupKey: Hashable {
+        var colorHex: String?
+        var isLevel1: Bool
+        var isCallout: Bool
+    }
 
     var body: some View {
         Canvas { context, _ in
-            // Branch lines take their topic's colour, like iThoughts.
-            for (colorHex, group) in Dictionary(grouping: segments, by: \.colorHex) {
+            // Branch lines take their topic's colour, like iThoughts; main
+            // branches can have their own shape and weight.
+            let groups = Dictionary(grouping: segments) {
+                GroupKey(colorHex: $0.colorHex, isLevel1: $0.isLevel1, isCallout: $0.isCallout)
+            }
+            for (key, group) in groups {
+                let style = appearance.lineStyle(level1: key.isLevel1)
                 var path = Path()
                 for segment in group {
                     ConnectionLinePathBuilder.addConnection(
                         from: segment.start,
                         to: segment.end,
-                        style: lineStyle,
+                        style: style,
                         to: &path
                     )
                 }
-                context.stroke(path, with: .color(TopicColor.color(colorHex) ?? lineColor), lineWidth: lineWidth)
+                let width = appearance.lineWidth(level1: key.isLevel1)
+                let scaledWidth = appearance.activeMapStyle == nil ? width : max(1, width * min(max(zoomScale, 0.5), 2))
+                context.stroke(
+                    path,
+                    with: .color(TopicColor.color(key.colorHex) ?? lineColor),
+                    style: StrokeStyle(
+                        lineWidth: key.isCallout ? 1 : scaledWidth,
+                        lineCap: .round,
+                        lineJoin: .round,
+                        dash: key.isCallout ? [3, 4] : []
+                    )
+                )
             }
         }
     }
@@ -6153,8 +6472,8 @@ private struct NodeView: View {
                 let canvasDeltaX = value.translation.width / zoomScale
                 let canvasDeltaY = value.translation.height / zoomScale
 
-                node.x = originalCanvasPosition.x + canvasDeltaX
-                node.y = originalCanvasPosition.y + canvasDeltaY
+                // The canvas moves the dragged topic (with the rest of the
+                // selection and their branches) in one array update.
                 onDragChanged(CGSize(width: canvasDeltaX, height: canvasDeltaY))
             }
             .onEnded { _ in
@@ -6885,8 +7204,38 @@ struct CanvasAppearance: Codable, Equatable {
     var showGrid = true
     var gridSize: GridSize = .medium
     var showQuadrants = false
+    /// Look of an opened iThoughts map (its `style.xml`). Saved with the map,
+    /// never in the app-wide defaults.
+    var mapStyle: MapStyle?
 
     private static let userDefaultsKey = "CanvasAppearance"
+
+    var activeMapStyle: MapStyle? {
+        mapStyle?.isEnabled == true ? mapStyle : nil
+    }
+
+    /// Branch line shape; an iThoughts map can use one for main branches and another below.
+    func lineStyle(level1: Bool) -> ConnectionLineStyle {
+        guard let style = activeMapStyle else {
+            return connectionLineStyle
+        }
+        return level1 ? style.level1LineStyle : style.levelNLineStyle
+    }
+
+    func lineWidth(level1: Bool) -> CGFloat {
+        guard let style = activeMapStyle else {
+            return connectionLineThickness.width
+        }
+        let base = max(1, CGFloat(style.lineThickness) * 0.75)
+        return level1 && style.level1Tapered ? base * 2 : base
+    }
+
+    var showsGrid: Bool {
+        guard let style = activeMapStyle, style.canvasColorHex != nil else {
+            return showGrid
+        }
+        return style.canvasShowsGrid
+    }
 
     enum ThemeOption: String, CaseIterable, Codable, Identifiable {
         case systemDefault
@@ -7067,6 +7416,7 @@ struct CanvasAppearance: Codable, Equatable {
         case showGrid
         case gridSize
         case showQuadrants
+        case mapStyle
     }
 
     init() { }
@@ -7090,6 +7440,7 @@ struct CanvasAppearance: Codable, Equatable {
         showGrid = try container.decodeIfPresent(Bool.self, forKey: .showGrid) ?? true
         gridSize = try container.decodeIfPresent(GridSize.self, forKey: .gridSize) ?? .medium
         showQuadrants = try container.decodeIfPresent(Bool.self, forKey: .showQuadrants) ?? false
+        mapStyle = try container.decodeIfPresent(MapStyle.self, forKey: .mapStyle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -7103,6 +7454,7 @@ struct CanvasAppearance: Codable, Equatable {
         try container.encode(showGrid, forKey: .showGrid)
         try container.encode(gridSize, forKey: .gridSize)
         try container.encode(showQuadrants, forKey: .showQuadrants)
+        try container.encodeIfPresent(mapStyle, forKey: .mapStyle)
     }
 
     private static func themeForLegacyBackground(_ rawValue: String?) -> ThemeOption {
@@ -7133,7 +7485,9 @@ struct CanvasAppearance: Codable, Equatable {
 
     func save() {
         do {
-            let data = try JSONEncoder().encode(self)
+            var appWide = self
+            appWide.mapStyle = nil
+            let data = try JSONEncoder().encode(appWide)
             UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
         } catch {
             print("MyThoughts CanvasAppearance: failed to save settings: \(error).")
@@ -7145,6 +7499,37 @@ struct CanvasAppearance: Codable, Equatable {
     }
 
     func themeColors(for colorScheme: ColorScheme) -> CanvasThemeColors {
+        var colors = baseThemeColors(for: colorScheme)
+        guard let style = activeMapStyle else {
+            return colors
+        }
+        if let canvasHex = style.canvasColorHex, let canvas = TopicColor.color(canvasHex) {
+            colors.canvasBackground = canvas
+            if style.canvasIsDark {
+                colors.grid = .white.opacity(0.08)
+                colors.nodeBackground = Color(red: 0.15, green: 0.15, blue: 0.17)
+                colors.nodeBorder = .white.opacity(0.22)
+                colors.nodeText = .white
+                colors.connection = .white.opacity(0.45)
+                colors.quadrantAxis = .white.opacity(0.2)
+                colors.quadrantLabel = .white.opacity(0.6)
+            } else {
+                colors.grid = .black.opacity(0.07)
+                colors.nodeBackground = .white
+                colors.nodeBorder = .black.opacity(0.18)
+                colors.nodeText = .black
+                colors.connection = .black.opacity(0.35)
+                colors.quadrantAxis = .black.opacity(0.25)
+                colors.quadrantLabel = .black.opacity(0.55)
+            }
+        }
+        if let linkHex = style.linkColorHex, let link = TopicColor.color(linkHex) {
+            colors.connection = link
+        }
+        return colors
+    }
+
+    private func baseThemeColors(for colorScheme: ColorScheme) -> CanvasThemeColors {
         switch theme {
         case .systemDefault:
             CanvasThemeColors(

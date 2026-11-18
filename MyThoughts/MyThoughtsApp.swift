@@ -15,12 +15,41 @@ enum ExternalOpenQueue {
         defer { pending.removeAll() }
         return pending.last
     }
+
+    /// Every waiting file, in the order they arrived; each opens in its own window.
+    static func takeAll() -> [URL] {
+        defer { pending.removeAll() }
+        var seen = Set<URL>()
+        return pending.filter { seen.insert($0.standardizedFileURL).inserted }
+    }
 }
 
 final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
+    /// Finder double-click, "Open With", drop on the Dock icon: each file gets its
+    /// own window (or comes forward if it is already open).
     func application(_ application: NSApplication, open urls: [URL]) {
-        if let url = urls.last {
-            ExternalOpenQueue.enqueue(url)
+        MainActor.assumeIsolated {
+            for url in urls {
+                if MapWindowRegistry.shared.entries.isEmpty && WindowOpener.action == nil {
+                    // Too early for any window: the first map window picks it up.
+                    ExternalOpenQueue.enqueue(url)
+                } else {
+                    MapWindowRegistry.shared.open(url)
+                }
+            }
+        }
+        // Launched by opening files, SwiftUI shows no window of its own; make sure
+        // queued files still get one.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                MapWindowRegistry.shared.openQueuedFilesIfNoWindow()
+            }
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            MapWindowRegistry.shared.confirmQuit() ? .terminateNow : .terminateCancel
         }
     }
 }
@@ -28,20 +57,41 @@ final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MyThoughtsApp: App {
     @NSApplicationDelegateAdaptor(MyThoughtsAppDelegate.self) private var appDelegate
-    @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
 
     var body: some Scene {
-        Window("MyThoughts", id: "main") {
-            ContentView()
+        // One window per map; windows can also be merged into tabs (Window ▸ Merge All Windows).
+        WindowGroup("MyThoughts", id: MapWindowID.map, for: URL.self) { $fileURL in
+            ContentView(fileURL: $fileURL)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .windowStyle(.titleBar)
         .commands {
+            MyThoughtsCommands()
+        }
+    }
+}
+
+enum MapWindowID {
+    static let map = "map"
+}
+
+struct MyThoughtsCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
+
+    var body: some Commands {
+            // Lets the app delegate open windows for Finder files even before any window exists.
+            let _ = MainActor.assumeIsolated { WindowOpener.action = openWindow }
             CommandGroup(replacing: .newItem) {
-                Button("New Map") {
-                    NotificationCenter.default.post(name: MyThoughtsFileCommand.newMap, object: nil)
+                Button("New Window") {
+                    openWindow(id: MapWindowID.map)
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+
+                Button("New Map in This Window") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.newMap, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option])
 
                 Button("New From Template...") {
                     NotificationCenter.default.post(name: MyThoughtsFileCommand.newFromTemplate, object: nil)
@@ -128,7 +178,8 @@ struct MyThoughtsApp: App {
                 .keyboardShortcut("p", modifiers: [.command])
             }
 
-            CommandMenu("View") {
+            // Into the system View menu (a WindowGroup already has one).
+            CommandGroup(before: .toolbar) {
                 Button(isOutlineVisible ? "Hide Outline" : "Show Outline") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleOutline, object: nil)
                 }
@@ -224,6 +275,5 @@ struct MyThoughtsApp: App {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.layout)
                 }
             }
-        }
     }
 }

@@ -201,7 +201,7 @@ enum MapValidator {
         for summary in summaries {
             if !nodeIDs.contains(summary.summaryNodeID) ||
                 summary.summarizedNodeIDs.contains(where: { !nodeIDs.contains($0) }) ||
-                summary.summarizedNodeIDs.count < 2 {
+                summary.summarizedNodeIDs.isEmpty {
                 issues.append(
                     MapValidationIssue(
                         kind: .invalidSummaryReference,
@@ -335,7 +335,7 @@ enum MapValidator {
 
             var repairedSummary = summary
             repairedSummary.summarizedNodeIDs = summary.summarizedNodeIDs.filter { validNodeIDs.contains($0) }
-            guard repairedSummary.summarizedNodeIDs.count >= 2 else {
+            guard !repairedSummary.summarizedNodeIDs.isEmpty else {
                 actions.append("Removed invalid summary")
                 return nil
             }

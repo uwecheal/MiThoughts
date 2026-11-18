@@ -10,12 +10,14 @@
 		1A0002072C17500000000001 /* TaskManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002082C17500000000001 /* TaskManagement.swift */; };
 		1A0002052C17500000000001 /* OutlineFormatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002062C17500000000001 /* OutlineFormatService.swift */; };
 		1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002042C17500000000001 /* TopicStyleRendering.swift */; };
+		1A00020B2C17500000000001 /* MapWindowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00020C2C17500000000001 /* MapWindowSupport.swift */; };
 		1A0002012C17500000000001 /* ItmzExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002022C17500000000001 /* ItmzExportService.swift */; };
 		1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000022C17500000000001 /* MyThoughtsApp.swift */; };
 		1A0000032C17500000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000042C17500000000001 /* ContentView.swift */; };
 		1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000182C17500000000001 /* InfiniteCanvasView.swift */; };
 		1A0000192C17500000000001 /* CanvasNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001A2C17500000000001 /* CanvasNode.swift */; };
 		1A00001B2C17500000000001 /* NodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001C2C17500000000001 /* NodeStore.swift */; };
+		1A0002092C17500000000001 /* MapStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00020A2C17500000000001 /* MapStyle.swift */; };
 		1A00001D2C17500000000001 /* CanvasConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001E2C17500000000001 /* CanvasConnection.swift */; };
 		1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000202C17500000000001 /* AppleIntegrationService.swift */; };
 		1A0000212C17500000000001 /* MapValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000222C17500000000001 /* MapValidator.swift */; };
@@ -40,6 +42,7 @@
 		1A0002082C17500000000001 /* TaskManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskManagement.swift; sourceTree = "<group>"; };
 		1A0002062C17500000000001 /* OutlineFormatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineFormatService.swift; sourceTree = "<group>"; };
 		1A0002042C17500000000001 /* TopicStyleRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStyleRendering.swift; sourceTree = "<group>"; };
+		1A00020C2C17500000000001 /* MapWindowSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWindowSupport.swift; sourceTree = "<group>"; };
 		1A0002022C17500000000001 /* ItmzExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzExportService.swift; sourceTree = "<group>"; };
 		1A0000022C17500000000001 /* MyThoughtsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsApp.swift; sourceTree = "<group>"; };
 		1A0000042C17500000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -47,6 +50,7 @@
 		1A0000182C17500000000001 /* InfiniteCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfiniteCanvasView.swift; sourceTree = "<group>"; };
 		1A00001A2C17500000000001 /* CanvasNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasNode.swift; sourceTree = "<group>"; };
 		1A00001C2C17500000000001 /* NodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeStore.swift; sourceTree = "<group>"; };
+		1A00020A2C17500000000001 /* MapStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapStyle.swift; sourceTree = "<group>"; };
 		1A00001E2C17500000000001 /* CanvasConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasConnection.swift; sourceTree = "<group>"; };
 		1A0000202C17500000000001 /* AppleIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntegrationService.swift; sourceTree = "<group>"; };
 		1A0000222C17500000000001 /* MapValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapValidator.swift; sourceTree = "<group>"; };
@@ -125,6 +129,7 @@
 			children = (
 				1A00001A2C17500000000001 /* CanvasNode.swift */,
 				1A00001E2C17500000000001 /* CanvasConnection.swift */,
+				1A00020A2C17500000000001 /* MapStyle.swift */,
 				1A0000382C17500000000001 /* CanvasSummary.swift */,
 				1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */,
 			);
@@ -141,6 +146,7 @@
 				1A0000262C17500000000001 /* IThoughtsImportService.swift */,
 				1A0000282C17500000000001 /* MapExportRenderer.swift */,
 				1A0002022C17500000000001 /* ItmzExportService.swift */,
+				1A00020C2C17500000000001 /* MapWindowSupport.swift */,
 				1A0002062C17500000000001 /* OutlineFormatService.swift */,
 				1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */,
 				1A00002C2C17500000000001 /* MapLayoutService.swift */,
@@ -235,12 +241,14 @@
 				1A0000192C17500000000001 /* CanvasNode.swift in Sources */,
 				1A00001B2C17500000000001 /* NodeStore.swift in Sources */,
 				1A00001D2C17500000000001 /* CanvasConnection.swift in Sources */,
+				1A0002092C17500000000001 /* MapStyle.swift in Sources */,
 				1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */,
 				1A0000212C17500000000001 /* MapValidator.swift in Sources */,
 				1A0000232C17500000000001 /* HistoryManager.swift in Sources */,
 				1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */,
 				1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */,
 				1A0002012C17500000000001 /* ItmzExportService.swift in Sources */,
+				1A00020B2C17500000000001 /* MapWindowSupport.swift in Sources */,
 				1A0002052C17500000000001 /* OutlineFormatService.swift in Sources */,
 				1A0000292C17500000000001 /* OutlineView.swift in Sources */,
 				1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */,
