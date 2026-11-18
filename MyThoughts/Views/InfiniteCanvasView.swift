@@ -40,6 +40,10 @@ struct InfiniteCanvasView: View {
     @State private var detailsNodeID: CanvasNode.ID?
     @State private var newNodeIDs: Set<CanvasNode.ID> = []
     @State private var activePanIsAllowed: Bool?
+    /// Drag on empty canvas draws a selection box (iThoughts; three-finger drag on a trackpad).
+    @State private var isMarqueeSelecting = false
+    @State private var marqueeRect: CGRect?
+    @State private var marqueeBaseSelection: Set<CanvasNode.ID> = []
     @State private var isDraggingNode = false
     @State private var draggedNodeID: CanvasNode.ID?
     @State private var dropTargetNodeID: CanvasNode.ID?
@@ -56,6 +60,8 @@ struct InfiniteCanvasView: View {
     @State private var isShowingStartScreen: Bool
     @State private var currentFileURL: URL?
     @State private var isDirty = false
+    /// Set when unsaved changes from the last session were brought back at launch.
+    @State private var recoveredSourceName: String?
     @State private var lastSavedAt: Date?
     @State private var documentCreatedAt: Date
     @State private var statusMessage = ""
@@ -95,7 +101,13 @@ struct InfiniteCanvasView: View {
         // every other window starts empty (or with its own file).
         let owns = windowFileURL.wrappedValue == nil && MainActor.assumeIsolated { AutosaveOwnership.claim() }
         _ownsAutosave = State(initialValue: owns)
-        let document = owns ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
+        // Only unsaved work comes back; otherwise the window opens on the start screen
+        // instead of whatever map was last on the canvas.
+        let recovers = owns && AutosaveInfo.hasUnsavedChanges
+        let document = recovers ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
+        _isDirty = State(initialValue: recovers && !document.nodes.isEmpty)
+        _recoveredSourceName = State(initialValue: recovers && !document.nodes.isEmpty
+            ? (AutosaveInfo.sourceFileName ?? "an untitled map") : nil)
         var notePanelSettings = NotePanelSettings.load()
         notePanelSettings.position = .right
         var loadedNodes = document.nodes
@@ -467,6 +479,15 @@ struct InfiniteCanvasView: View {
                     }
                 }
 
+                if let marqueeRect {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.10))
+                        .overlay(Rectangle().stroke(Color.accentColor.opacity(0.8), lineWidth: 1))
+                        .frame(width: marqueeRect.width, height: marqueeRect.height)
+                        .position(x: marqueeRect.midX, y: marqueeRect.midY)
+                        .allowsHitTesting(false)
+                }
+
                 if relationshipSourceID != nil {
                     relationshipModeIndicator
                         .padding(12)
@@ -537,10 +558,17 @@ struct InfiniteCanvasView: View {
                 }
             }
             .background(
-                KeyboardEventMonitor { event in
+                KeyboardEventMonitor(eventMask: [.keyDown, .scrollWheel]) { event in
+                    if event.type == .scrollWheel {
+                        return handleScrollEvent(event)
+                    }
                     // The monitor sees every window's keys; act only on our own.
                     guard isEventForThisWindow(event) else {
                         return false
+                    }
+                    // Keyboard work on the canvas hides the pointer until the mouse moves.
+                    if event.window === windowRef.window {
+                        CanvasPointer.hide()
                     }
                     return handleKeyEvent(event)
                 }
@@ -556,6 +584,9 @@ struct InfiniteCanvasView: View {
             .focused($isCanvasFocused)
             .background(
                 WindowAccessor { window in
+                    // Keep the window even if it arrives before the canvas has registered
+                    // (happens for the first window at launch); registerWindow attaches it then.
+                    windowRef.window = window
                     MapWindowRegistry.shared.attach(window, to: windowID)
                     updateWindowTitle()
                 }
@@ -567,7 +598,22 @@ struct InfiniteCanvasView: View {
                 isCanvasFocused = true
                 updateWindowTitle()
                 DispatchQueue.main.async {
+                    if let source = recoveredSourceName {
+                        recoveredSourceName = nil
+                        isShowingStartScreen = false
+                        showStatusMessage("Recovered unsaved changes from \(source). Save them (⌘S) to keep them, or start a new map.")
+                    }
                     if let url = windowFileURL, currentFileURL == nil, nodes.isEmpty {
+                        // macOS can restore two windows for one file; the later one bows out.
+                        let target = url.standardizedFileURL
+                        let firstOwner = MapWindowRegistry.shared.entries.first {
+                            $0.fileURL()?.standardizedFileURL == target
+                        }
+                        if let firstOwner, firstOwner.id != windowID {
+                            firstOwner.windowRef.window?.makeKeyAndOrderFront(nil)
+                            windowRef.window?.close()
+                            return
+                        }
                         openMyThoughtsFile(at: url)
                     }
                     openPendingExternalFile()
@@ -609,8 +655,11 @@ struct InfiniteCanvasView: View {
                     windowFileURL = newValue
                 }
             }
-            .onChange(of: isDirty) { _, _ in
+            .onChange(of: isDirty) { _, newValue in
                 updateWindowTitle()
+                if ownsAutosave {
+                    AutosaveInfo.record(hasUnsavedChanges: newValue && !nodes.isEmpty, fileURL: currentFileURL)
+                }
             }
             .onChange(of: isShowingStartScreen) { _, _ in
                 updateWindowTitle()
@@ -688,6 +737,9 @@ struct InfiniteCanvasView: View {
             }
             .onReceive(commandPublisher(for: MyThoughtsViewCommand.editNotes)) { _ in
                 openNotePanel()
+                DispatchQueue.main.async {
+                    isNoteEditorFocused = true
+                }
             }
             .onReceive(commandPublisher(for: MyThoughtsViewCommand.find)) { _ in
                 openSearchPanel()
@@ -899,14 +951,28 @@ struct InfiniteCanvasView: View {
         )
     }
 
+    /// Drag on empty canvas: a selection box, like iThoughts (⌘ or ⇧ adds to the
+    /// selection). ⌥-drag pans; two-finger scrolling also pans (see `handleScrollEvent`).
     private var panGesture: some Gesture {
         DragGesture(coordinateSpace: .named("canvasScreen"))
             .onChanged { value in
                 if activePanIsAllowed == nil {
-                    activePanIsAllowed = !isDraggingNode && node(at: screenToCanvasPosition(value.startLocation)) == nil
-                    if activePanIsAllowed == true {
+                    let startsOnEmptyCanvas = !isDraggingNode && node(at: screenToCanvasPosition(value.startLocation)) == nil
+                    let flags = NSApp.currentEvent?.modifierFlags ?? []
+                    if startsOnEmptyCanvas && !flags.contains(.option) && relationshipSourceID == nil {
+                        isMarqueeSelecting = true
+                        marqueeBaseSelection = flags.contains(.command) || flags.contains(.shift) ? selectedNodeIDs : []
+                        editingNodeID = nil
+                    }
+                    activePanIsAllowed = startsOnEmptyCanvas && !isMarqueeSelecting
+                    if startsOnEmptyCanvas {
                         dropTargetNodeID = nil
                     }
+                }
+
+                if isMarqueeSelecting {
+                    updateMarquee(from: value.startLocation, to: value.location)
+                    return
                 }
 
                 guard activePanIsAllowed == true else {
@@ -921,7 +987,70 @@ struct InfiniteCanvasView: View {
             .onEnded { _ in
                 dragStartPanOffset = panOffset
                 activePanIsAllowed = nil
+                if isMarqueeSelecting {
+                    isMarqueeSelecting = false
+                    marqueeRect = nil
+                    focusCanvas()
+                }
             }
+    }
+
+    private func updateMarquee(from start: CGPoint, to end: CGPoint) {
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        marqueeRect = rect
+        var selection = marqueeBaseSelection
+        for node in derivedData.visibleNodes {
+            let origin = canvasToScreenPosition(CGPoint(x: node.x, y: node.y))
+            let nodeRect = CGRect(x: origin.x, y: origin.y, width: node.width * zoomScale, height: node.height * zoomScale)
+            if rect.intersects(nodeRect) {
+                selection.insert(node.id)
+            }
+        }
+        selectedNodeIDs = selection
+        if let primary = selectedNodeID, selection.contains(primary) {
+            return
+        }
+        selectedNodeID = derivedData.visibleNodes.first { selection.contains($0.id) }?.id
+        noteHistoryNodeID = nil
+    }
+
+    /// Two-finger scroll pans the canvas; ⌘-scroll zooms. Scrolling over lists,
+    /// notes and other scrollable panels is left to them.
+    private func handleScrollEvent(_ event: NSEvent) -> Bool {
+        guard let window = windowRef.window, event.window === window,
+              let contentView = window.contentView else {
+            return false
+        }
+        let point = contentView.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        var view = contentView.hitTest(point)
+        while let current = view {
+            if current is NSScrollView || current is NSTextView {
+                return false
+            }
+            view = current.superview
+        }
+        let precise = event.hasPreciseScrollingDeltas
+        if event.modifierFlags.contains(.command) {
+            let delta = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 8
+            zoom(by: exp(delta * 0.01))
+            CanvasPointer.hide()
+            return true
+        }
+        let dx = precise ? event.scrollingDeltaX : event.scrollingDeltaX * 10
+        let dy = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 10
+        guard dx != 0 || dy != 0 else {
+            return false
+        }
+        panOffset = CGSize(width: panOffset.width + dx, height: panOffset.height + dy)
+        dragStartPanOffset = panOffset
+        // Two-finger panning doesn't move the pointer, so keep it out of the way.
+        CanvasPointer.hide()
+        return true
     }
 
     private var zoomGesture: some Gesture {
@@ -2055,12 +2184,17 @@ struct InfiniteCanvasView: View {
             id: windowID,
             windowRef: windowRef,
             ownsAutosave: ownsAutosave,
-            fileURL: { currentFileURL },
+            // The file this window shows, or is about to load (restored windows).
+            fileURL: { currentFileURL ?? windowFileURL },
             isDirty: { isDirty },
             isBlank: { nodes.isEmpty || (isShowingStartScreen && !isDirty && currentFileURL != nil) },
             openHere: { url in openMyThoughtsFile(at: url) },
             confirmClose: { confirmUnsavedChangesIfNeeded() }
         ))
+        if let window = windowRef.window {
+            MapWindowRegistry.shared.attach(window, to: windowID)
+            updateWindowTitle()
+        }
     }
 
     /// Menu commands are broadcast; only the front map window acts on them.
@@ -3173,6 +3307,25 @@ struct InfiniteCanvasView: View {
 
         if changedCollapseState {
             saveNodes()
+        }
+    }
+
+    private func selectTopicNearestViewCenter() {
+        guard viewportSize.width > 0, viewportSize.height > 0 else {
+            return
+        }
+        let target = screenToCanvasPosition(CGPoint(x: viewportSize.width / 2, y: viewportSize.height / 2))
+        let nearest = derivedData.visibleNodes.min { left, right in
+            let a = nodeCenter(left)
+            let b = nodeCenter(right)
+            return hypot(a.x - target.x, a.y - target.y) < hypot(b.x - target.x, b.y - target.y)
+        }
+        guard let nearest else {
+            return
+        }
+        selectSingleNode(nearest.id)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            centerCanvas(on: nearest.id)
         }
     }
 
@@ -4811,9 +4964,28 @@ struct InfiniteCanvasView: View {
             return false
         }
 
-        if editingNodeID != nil {
+        if let editingID = editingNodeID {
             if event.keyCode == KeyCode.escape {
                 cancelEditing()
+                return true
+            }
+
+            // iThoughts: Tab while typing a title finishes it and starts a child (⇧Tab a parent).
+            // Leave Tab to the input method while it is still composing (e.g. pinyin).
+            if event.keyCode == KeyCode.tab,
+               event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+               !((event.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false) {
+                commitEditing(for: editingID)
+                guard nodes.contains(where: { $0.id == editingID }) else {
+                    return true
+                }
+                selectedNodeID = editingID
+                selectedNodeIDs = [editingID]
+                if event.modifierFlags.contains(.shift) {
+                    insertParentForSelectedNode()
+                } else {
+                    createChildForSelectedNode()
+                }
                 return true
             }
 
@@ -4966,6 +5138,15 @@ struct InfiniteCanvasView: View {
 
     private func handleArrowKeyEvent(_ event: NSEvent) -> Bool {
         let isCommand = event.modifierFlags.contains(.command)
+        let arrowKeys = [KeyCode.upArrow, KeyCode.downArrow, KeyCode.leftArrow, KeyCode.rightArrow]
+
+        // Nothing selected: an arrow key picks the topic nearest the middle of
+        // the view and centres it, so keyboard navigation can start anywhere.
+        if arrowKeys.contains(event.keyCode),
+           selectedNodeID.map({ !visibleNodeIDs.contains($0) }) ?? true {
+            selectTopicNearestViewCenter()
+            return true
+        }
 
         switch event.keyCode {
         case KeyCode.upArrow:
@@ -5431,6 +5612,28 @@ struct InfiniteCanvasView: View {
             hasChildren: hasChildren(wrappedNode.id),
             fillHex: derivedData.effectiveColorHexByNodeID[wrappedNode.id],
             numberPrefix: derivedData.numberPrefixByNodeID[wrappedNode.id],
+            onEditNote: {
+                selectSingleNode(wrappedNode.id)
+                openNotePanel()
+                DispatchQueue.main.async {
+                    isNoteEditorFocused = true
+                }
+            },
+            onResizeBegan: {
+                recordUndoSnapshot()
+            },
+            onResizeEnded: {
+                saveNodes()
+            },
+            onFitToContent: {
+                guard let index = nodes.firstIndex(where: { $0.id == wrappedNode.id }) else {
+                    return
+                }
+                recordUndoSnapshot()
+                nodes[index].style.textWidth = nil
+                resizeToFitContent(at: index)
+                saveNodes()
+            },
             isRelationshipSource: relationshipSourceID == wrappedNode.id,
             relationshipMenuItems: relationshipMenuItems,
             knownResources: derivedData.knownResources,
@@ -5449,7 +5652,9 @@ struct InfiniteCanvasView: View {
                     }
                     return
                 }
-                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                // iThoughts: ⌘-click (or ⇧-click) adds or removes a topic from the selection.
+                let flags = NSApp.currentEvent?.modifierFlags ?? []
+                if flags.contains(.command) || flags.contains(.shift) {
                     toggleNodeSelection(wrappedNode.id)
                 } else {
                     selectSingleNode(wrappedNode.id)
@@ -6403,6 +6608,11 @@ private struct NodeView: View {
     let fillHex: String?
     /// iThoughts auto-numbering shown before the title ("1.2 "), display only.
     var numberPrefix: String? = nil
+    var onEditNote: () -> Void = {}
+    var onResizeBegan: () -> Void = {}
+    var onResizeEnded: () -> Void = {}
+    var onFitToContent: () -> Void = {}
+    @State private var resizeStartSize: CGSize?
     let isRelationshipSource: Bool
     let relationshipMenuItems: [RelationshipMenuItem]
     let knownResources: [String]
@@ -6518,6 +6728,16 @@ private struct NodeView: View {
             }
         }
         .frame(width: node.width * zoomScale, height: node.height * zoomScale)
+        .overlay(alignment: .topTrailing) {
+            if !node.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                noteBadge
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isPrimarySelected && !isEditing {
+                resizeHandle
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onEdit)
         .onTapGesture(count: 1, perform: onSelect)
@@ -6526,7 +6746,9 @@ private struct NodeView: View {
                 Button("Add Child", action: onAddChild)
                 Button("Add Sibling", action: onAddSibling)
                 Button("Edit Title", action: onEdit)
+                Button(node.body.isEmpty ? "Add Note" : "Edit Note", action: onEditNote)
                 Button("Edit Details", action: onEditDetails)
+                Button("Fit Size to Content", action: onFitToContent)
                 Menu("Marker") {
                     ForEach(NodeMarker.allCases) { marker in
                         Button {
@@ -6721,6 +6943,58 @@ private struct NodeView: View {
         return CGSize(width: width, height: height)
     }
 
+    /// Shown on topics that have a note (iThoughts note icon); hover previews it, click opens it.
+    private var noteBadge: some View {
+        Image(systemName: "note.text")
+            .font(.system(size: max(9 * zoomScale, 6), weight: .semibold))
+            .foregroundStyle(textColor.opacity(0.85))
+            .padding(3 * zoomScale)
+            .background(Circle().fill(fillColor.opacity(0.9)))
+            .offset(x: 5 * zoomScale, y: -5 * zoomScale)
+            .help(String(node.body.prefix(400)))
+            .onTapGesture(perform: onEditNote)
+    }
+
+    /// Drag to resize the topic (sets its wrap width, like iThoughts); double-click fits the content.
+    private var resizeHandle: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(visualStyle.selectedBorderColor)
+            .frame(width: 9, height: 9)
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.white.opacity(0.9), lineWidth: 1))
+            .offset(x: 4, y: 4)
+            .contentShape(Rectangle().inset(by: -6))
+            .onHover { inside in
+                if inside {
+                    NSCursor.crosshair.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .help("Drag to resize · double-click to fit the content")
+            .onTapGesture(count: 2, perform: onFitToContent)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named("canvasScreen"))
+                    .onChanged { value in
+                        if resizeStartSize == nil {
+                            resizeStartSize = CGSize(width: node.width, height: node.height)
+                            onResizeBegan()
+                        }
+                        guard let start = resizeStartSize else {
+                            return
+                        }
+                        let width = min(max(start.width + value.translation.width / zoomScale, 60), 1200)
+                        let height = min(max(start.height + value.translation.height / zoomScale, 28), 900)
+                        node.width = width
+                        node.height = height
+                        node.style.textWidth = Double(max(width - 24, 1))
+                    }
+                    .onEnded { _ in
+                        resizeStartSize = nil
+                        onResizeEnded()
+                    }
+            )
+    }
+
     private var maximumTitleLines: Int {
         let base = node.style.textSize.map { CGFloat($0) } ?? visualStyle.fontPointSize
         let imageHeight = topicImage == nil ? 0 : imageDisplaySize.height + 6
@@ -6763,7 +7037,7 @@ private struct NodeView: View {
                     onDragStart()
                 }
 
-                guard let originalCanvasPosition else {
+                guard originalCanvasPosition != nil else {
                     return
                 }
 
@@ -7923,10 +8197,12 @@ struct CanvasThemeColors {
 }
 
 private struct KeyboardEventMonitor: NSViewRepresentable {
+    /// Key presses by default; also used for scroll-wheel events.
+    var eventMask: NSEvent.EventTypeMask = .keyDown
     var onKeyDown: (NSEvent) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onKeyDown: onKeyDown)
+        Coordinator(eventMask: eventMask, onKeyDown: onKeyDown)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -7944,9 +8220,11 @@ private struct KeyboardEventMonitor: NSViewRepresentable {
 
     final class Coordinator {
         var onKeyDown: (NSEvent) -> Bool
+        private let eventMask: NSEvent.EventTypeMask
         private var monitor: Any?
 
-        init(onKeyDown: @escaping (NSEvent) -> Bool) {
+        init(eventMask: NSEvent.EventTypeMask, onKeyDown: @escaping (NSEvent) -> Bool) {
+            self.eventMask = eventMask
             self.onKeyDown = onKeyDown
         }
 
@@ -7959,7 +8237,7 @@ private struct KeyboardEventMonitor: NSViewRepresentable {
                 return
             }
 
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
                 guard let self else {
                     return event
                 }

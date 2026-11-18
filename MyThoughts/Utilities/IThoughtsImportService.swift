@@ -368,7 +368,8 @@ private struct ImportBuilder {
             subLayout: attributes["map-layout"].flatMap(Int.init),
             subLevel1Link: attributes["l1-link"],
             subLevelNLink: attributes["ln-link"],
-            textColorHex: attributes["text-color"].flatMap { TopicColor.normalizedHex($0) }
+            textColorHex: attributes["text-color"].flatMap { TopicColor.normalizedHex($0) },
+            textWidth: attributes["text-width"].flatMap(Double.init)
         )
 
         let node = CanvasNode(

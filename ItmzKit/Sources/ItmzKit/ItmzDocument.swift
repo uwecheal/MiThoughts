@@ -64,7 +64,7 @@ final class ItmzDocument {
     static let extendedManagedAttributes = managedAttributes + [
         "shape", "text-size", "boundary", "floating",
         "task-progress", "task-start", "task-due", "task-priority", "task-effort", "cost", "cost-type", "resources",
-        "att-id", "att-name", "image-width", "summary1", "summary2"
+        "att-id", "att-name", "image-width", "summary1", "summary2", "text-width"
     ]
 
     /// Relationship attributes an editor may change; others (e.g. `b-offset`) are kept.
@@ -387,6 +387,7 @@ final class ItmzDocument {
         return "#rel\(index)"
     }
 
+    @discardableResult
     func applyRelationships(_ relationships: [[String: String]], now: Date = Date()) -> Bool {
         let container: ItmzXMLElement
         if let existing = root.firstChild(named: "relationships") {

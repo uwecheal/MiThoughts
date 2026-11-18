@@ -396,6 +396,12 @@ private struct TreeWriter {
             a["att-name"] = nil
             a["image-width"] = nil
         }
+        // Topic width set by resizing (iThoughts text-width); untouched topics keep the file's value.
+        let originalTextWidth = original?["text-width"].flatMap(Double.init)
+        let textWidthSame = originalTextWidth.map { original in node.style.textWidth.map { abs($0 - original) < 0.5 } ?? false }
+            ?? (node.style.textWidth == nil)
+        set("text-width", node.style.textWidth.map { ItmzFormat.formatNumber($0.rounded()) },
+            unchangedIf: original != nil && textWidthSame)
         if node.style.imageData != nil {
             let originalWidth = original?["image-width"].flatMap(Double.init)
             set("image-width", node.style.imageWidth.map { ItmzFormat.formatNumber($0) },

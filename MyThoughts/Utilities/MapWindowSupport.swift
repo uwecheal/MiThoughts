@@ -91,6 +91,8 @@ final class MapWindowRegistry {
             return
         }
         entry.windowRef.window = window
+        // Needed so moving the mouse brings back a pointer hidden while panning.
+        window.acceptsMouseMovedEvents = true
         if window.isMainWindow || lastActiveID == nil {
             lastActiveID = id
         }
@@ -176,7 +178,12 @@ final class MapWindowRegistry {
         // A short pause also keeps the first request clear of SwiftUI's own launch work.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             MainActor.assumeIsolated {
-                openWindow(value: url)
+                // A restored window may have taken this file in the meantime.
+                if let existing = self.entries.first(where: { $0.fileURL()?.standardizedFileURL == url.standardizedFileURL }) {
+                    existing.windowRef.window?.makeKeyAndOrderFront(nil)
+                } else {
+                    openWindow(value: url)
+                }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
@@ -210,11 +217,81 @@ final class MapWindowRegistry {
     }
 }
 
+/// Hides the pointer while the canvas is panned with two fingers or driven by
+/// keys, and shows it again only when the mouse really moves, a button is
+/// pressed or the app goes to the background. `NSCursor.setHiddenUntilMouseMoves`
+/// flickers here, because topics sliding under the pointer trigger cursor updates.
+@MainActor
+enum CanvasPointer {
+    private static var isHidden = false
+    private static var eventMonitor: Any?
+    private static var resignObserver: NSObjectProtocol?
+
+    static func hide() {
+        guard !isHidden else {
+            return
+        }
+        isHidden = true
+        NSCursor.hide()
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged]
+        ) { event in
+            // A trackpad scroll can carry a zero-length move; only real movement shows the pointer.
+            if event.type != .mouseMoved || abs(event.deltaX) + abs(event.deltaY) > 0.5 {
+                MainActor.assumeIsolated { show() }
+            }
+            return event
+        }
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { show() }
+        }
+    }
+
+    static func show() {
+        guard isHidden else {
+            return
+        }
+        isHidden = false
+        NSCursor.unhide()
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        eventMonitor = nil
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+        }
+        resignObserver = nil
+    }
+}
+
 /// Lets SwiftUI's `openWindow` be used from places without a SwiftUI environment
 /// (the app delegate handling Finder opens).
 @MainActor
 enum WindowOpener {
     static var action: OpenWindowAction?
+}
+
+/// What the crash-safe autosave holds: only unsaved work is brought back at launch,
+/// so the app no longer reopens a stale map every time it starts.
+enum AutosaveInfo {
+    private static let unsavedKey = "MyThoughts.autosave.hasUnsavedChanges"
+    private static let sourceKey = "MyThoughts.autosave.sourceFile"
+
+    static var hasUnsavedChanges: Bool {
+        UserDefaults.standard.bool(forKey: unsavedKey)
+    }
+
+    /// Name of the file the unsaved changes belong to, if any.
+    static var sourceFileName: String? {
+        UserDefaults.standard.string(forKey: sourceKey)
+    }
+
+    static func record(hasUnsavedChanges: Bool, fileURL: URL?) {
+        UserDefaults.standard.set(hasUnsavedChanges, forKey: unsavedKey)
+        UserDefaults.standard.set(fileURL?.lastPathComponent, forKey: sourceKey)
+    }
 }
 
 /// Decides which window restores the autosaved map: the first one opened
