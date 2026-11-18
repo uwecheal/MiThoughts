@@ -100,6 +100,18 @@ struct MyThoughtsApp: App {
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
 
+                Menu("Export Outline") {
+                    Button("Markdown (.md)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.markdown.rawValue)
+                    }
+                    Button("OPML (.opml)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.opml.rawValue)
+                    }
+                    Button("FreeMind / Freeplane (.mm)...") {
+                        NotificationCenter.default.post(name: MyThoughtsFileCommand.exportOutline, object: OutlineFormat.freemind.rawValue)
+                    }
+                }
+
                 Button("Export as PDF...") {
                     NotificationCenter.default.post(name: MyThoughtsFileCommand.exportPDF, object: nil)
                 }

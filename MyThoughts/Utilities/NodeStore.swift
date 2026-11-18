@@ -91,6 +91,8 @@ enum MyThoughtsFileCommand {
     static let printMap = Notification.Name("MyThoughtsFileCommand.printMap")
     static let exportITMZ = Notification.Name("MyThoughtsFileCommand.exportITMZ")
     static let importITMZ = Notification.Name("MyThoughtsFileCommand.importITMZ")
+    /// object: OutlineFormat.rawValue
+    static let exportOutline = Notification.Name("MyThoughtsFileCommand.exportOutline")
     static let openURL = Notification.Name("MyThoughtsFileCommand.openURL")
 }
 

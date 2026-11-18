@@ -549,6 +549,11 @@ struct InfiniteCanvasView: View {
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportITMZ)) { _ in
                 exportITMZFile()
             }
+            .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.exportOutline)) { notification in
+                if let raw = notification.object as? String, let format = OutlineFormat(rawValue: raw) {
+                    exportOutlineFile(format)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.importITMZ)) { _ in
                 importIThoughtsFile()
             }
@@ -1298,11 +1303,12 @@ struct InfiniteCanvasView: View {
 
         let openPanel = NSOpenPanel()
         openPanel.title = "Open Map"
-        openPanel.message = "Open a MyThoughts (.mythoughts) or iThoughts (.itmz) map."
+        openPanel.message = "Open a MyThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
         openPanel.allowedContentTypes = [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
+            + OutlineFormat.importExtensions.compactMap { UTType(filenameExtension: $0) }
 
         guard openPanel.runModal() == .OK,
               let url = openPanel.url else {
@@ -1332,6 +1338,10 @@ struct InfiniteCanvasView: View {
     private func openMyThoughtsFile(at url: URL) {
         if isITMZFile(url) {
             openITMZFile(at: url)
+            return
+        }
+        if OutlineFormat(fileExtension: url.pathExtension) != nil {
+            openOutlineFile(at: url)
             return
         }
 
@@ -2040,6 +2050,85 @@ struct InfiniteCanvasView: View {
         } catch {
             print("iThoughts export: failed to write \(url.path): \(error).")
             showStatusMessage("Could not export iThoughts file: \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    // MARK: Outline formats (Markdown, OPML, FreeMind)
+
+    /// Opens an outline as a new, untitled map (Save asks where to store it).
+    private func openOutlineFile(at url: URL) {
+        do {
+            let result = try OutlineFormatService.importFile(at: url)
+            nodes = result.nodes
+            connections = result.connections
+            summaries = []
+            relationships = result.relationships
+            itmzSession = nil
+
+            clearSelection()
+            editingNodeID = nil
+            detailsNodeID = nil
+            isFocusMode = false
+            focusedNodeID = nil
+            newNodeIDs.removeAll()
+            relationshipSourceID = nil
+            historyManager.removeAll()
+            refreshDerivedData()
+            selectedNodeID = result.rootNodeID
+            selectedNodeIDs = [result.rootNodeID]
+            centerCanvas(on: result.rootNodeID)
+
+            currentFileURL = nil
+            lastSavedAt = nil
+            documentCreatedAt = Date()
+            saveNodes(markDirty: true)
+            hasCenteredInitialContent = true
+            isShowingStartScreen = false
+            updateWindowTitle()
+            showStatusMessage("Imported \(url.lastPathComponent) (\(result.topicCount) topics) as a new map. Use Save to keep it.")
+        } catch {
+            print("Outline import: failed to read \(url.path): \(error).")
+            showStatusMessage("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
+        }
+        focusCanvas()
+    }
+
+    private func exportOutlineFile(_ format: OutlineFormat) {
+        isShowingAppearancePopover = false
+        guard !nodes.isEmpty else {
+            showStatusMessage("The map is empty.")
+            return
+        }
+
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export as \(format.label)"
+        savePanel.nameFieldStringValue = "\(suggestedMapFileName).\(format.fileExtension)"
+        savePanel.canCreateDirectories = true
+        if let type = UTType(filenameExtension: format.fileExtension) {
+            savePanel.allowedContentTypes = [type]
+        }
+        guard savePanel.runModal() == .OK, var url = savePanel.url else {
+            focusCanvas()
+            return
+        }
+        if url.pathExtension.lowercased() != format.fileExtension {
+            url.appendPathExtension(format.fileExtension)
+        }
+
+        do {
+            let written = try OutlineFormatService.export(
+                format,
+                nodes: nodes,
+                relationships: relationships,
+                title: suggestedMapFileName,
+                to: url
+            )
+            let images = written.count - 1
+            showStatusMessage("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
+        } catch {
+            print("\(format.label) export: failed to write \(url.path): \(error).")
+            showStatusMessage("Could not export \(format.label): \(error.localizedDescription)")
         }
         focusCanvas()
     }

@@ -81,3 +81,23 @@ Keep ItmzKit free of app types (no SwiftUI, no `CanvasNode`) so it stays testabl
 
 Box sizes are estimated (iThoughts stores no heights); constants were tuned so that
 visible-topic overlaps across the 195 sample maps drop from 1,372 to 176 pairs.
+
+## Milestone 38A: Outline formats (Markdown, OPML, FreeMind)
+
+`MyThoughts/Utilities/OutlineFormatService.swift`, a Swift port of itmz-studio's exporters plus matching importers. It works on any map, not only opened `.itmz` files.
+
+* **Export**: File ▸ Export Outline ▸ Markdown / OPML / FreeMind (.mm). Topic images are copied to `<name>.assets/` next to Markdown and FreeMind files.
+  * Markdown: levels 1–2 become headings and deeper topics nested bullets. Markers become emoji, links, task info and notes are kept, and relationships are listed at the end. A note that contains its own headings or lists is written as a `>` quote so it is not read back as topics.
+  * OPML 2.0: `_note` and `url` attributes, plus `_itmz_color`, `_itmz_icon1`, `_itmz_folded` and `_itmz_task_progress`.
+  * FreeMind/Freeplane: colours, folding, left/right side, icons, notes (HTML), links, images, and relationships as `arrowlink`.
+* **Import**: File ▸ Open accepts `.opml`, `.md`/`.markdown` and `.mm`. They open as a new untitled map laid out as a tree.
+
+Verified on all 195 sample maps (export, then import, then compare in pre-order):
+
+| Format | Lossless | What is compared |
+|---|---|---|
+| OPML | 195/195 | titles, notes, links, colours |
+| FreeMind | 195/195 | titles, links, colours, relationships |
+| Markdown | 183/195 | titles |
+
+The 12 Markdown cases are limits of Markdown itself: titles containing blank lines or `[1]: url` reference definitions, and a level-2 topic literally named "Relationships".
