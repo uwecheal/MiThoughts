@@ -34,6 +34,7 @@
 		1A0000372C17500000000001 /* CanvasSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000382C17500000000001 /* CanvasSummary.swift */; };
 		1A0001012C17500000000001 /* ItmzZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001022C17500000000001 /* ItmzZip.swift */; };
 		1A0001032C17500000000001 /* ItmzXML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001042C17500000000001 /* ItmzXML.swift */; };
+		1A00020D2C17500000000001 /* ItmzLegacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00020E2C17500000000001 /* ItmzLegacy.swift */; };
 		1A0001052C17500000000001 /* ItmzDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001062C17500000000001 /* ItmzDocument.swift */; };
 		1A0001072C17500000000001 /* ItmzLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001082C17500000000001 /* ItmzLinks.swift */; };
 /* End PBXBuildFile section */
@@ -67,6 +68,7 @@
 		1A0000382C17500000000001 /* CanvasSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSummary.swift; sourceTree = "<group>"; };
 		1A0001022C17500000000001 /* ItmzZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzZip.swift; sourceTree = "<group>"; };
 		1A0001042C17500000000001 /* ItmzXML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzXML.swift; sourceTree = "<group>"; };
+		1A00020E2C17500000000001 /* ItmzLegacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzLegacy.swift; sourceTree = "<group>"; };
 		1A0001062C17500000000001 /* ItmzDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzDocument.swift; sourceTree = "<group>"; };
 		1A0001082C17500000000001 /* ItmzLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzLinks.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -161,6 +163,7 @@
 				1A0001022C17500000000001 /* ItmzZip.swift */,
 				1A0001042C17500000000001 /* ItmzXML.swift */,
 				1A0001062C17500000000001 /* ItmzDocument.swift */,
+				1A00020E2C17500000000001 /* ItmzLegacy.swift */,
 				1A0001082C17500000000001 /* ItmzLinks.swift */,
 			);
 			name = ItmzKit;
@@ -263,6 +266,7 @@
 				1A0001012C17500000000001 /* ItmzZip.swift in Sources */,
 				1A0001032C17500000000001 /* ItmzXML.swift in Sources */,
 				1A0001052C17500000000001 /* ItmzDocument.swift in Sources */,
+				1A00020D2C17500000000001 /* ItmzLegacy.swift in Sources */,
 				1A0001072C17500000000001 /* ItmzLinks.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

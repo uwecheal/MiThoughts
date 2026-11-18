@@ -186,3 +186,24 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
   - Two `.itmz` files opened together from Finder each got their own window.
   - The Window menu lists every map.
   - Task ▸ Show Task List reached only the window brought to the front; checked with a temporary routing log, both ways.
+
+## 38E — iThoughts 3 maps, outlined topics, groups, numbering, sub-map lines
+
+- **iThoughts 3 maps (`map.itm`)** — `ItmzLegacy` reads the property list and translates it into current `mapdata.xml` / `style.xml` in memory, after which the normal import is used.
+  - The `MapData` string holds `<iThoughtsRelative>` XML. Attribute names are translated: `txt`→`text`, `x`/`y`→`position`, `topcol`→`color`, `rsrcnm`→`resources`, `complete`→`task-progress`, `start`/`due`, `fnt`→`text-size`, `txtNumber`→`numbering`, `map_layout`/`l1_link`/`ln_link` and others. Relationships translate `end1`/`end2`, styles, `color`, `centretxt` and `Boffset`.
+  - Dates in the `ddMMyy HHmmss` format are converted.
+  - Titles and notes that exist only as `txtPLIST`/`notePLIST` are read straight from the keyed archive. A real unarchive fails on the Mac because of iOS font classes.
+  - `MapStyle` becomes `style.xml`. For the few maps without one, a style is built from the plist keys.
+  - Opened maps are untitled ("<name> — converted from iThoughts 3"). Save writes a new current-format `.itmz`; the original file is never overwritten.
+  - Tested on 216/216 old maps in the user's library (6,491 topics). Save, then reopen, keeps every title, image and relationship. The 304 empty titles are empty in the original too (133 image-only topics, 169 blank).
+- **Outlined topics.**
+  - On iThoughts' custom dark canvases (`<canvas dark="1">`), topics are drawn as a coloured outline on a dark body, matching iThoughts' renderings. Built-in dark canvases such as `16` keep solid fills.
+  - Canvas ▸ Outlined Topics switches this per map.
+- **Groups** (`<group type color member…>`): drawn as rounded boxes around the members' visible branches. `type 0` is tinted, `type 1` is an outline. Display only; the file keeps them as they are.
+- **Numbering** (`numbering` on a topic): its descendants show 1, 1.1, 1.1.1 … before their titles. Display only.
+- **Sub-map layouts** (`map-layout` with `l1-link`/`ln-link` on a topic):
+  - Lines inside that branch use the sub-map's own shapes.
+  - Top-down (`3`) and vertical (`2`) sub-maps connect bottom to top.
+  - Topic positions come from the file, so the layout itself is kept.
+- **`text-color`**: shown as the topic's text colour.
+- **Reminders sync test.** A one-reminder round trip (create → rename pushes → tick on "phone" pulls → delete unlinks) was written. It could not run from the development shell, because macOS refuses Reminders access to unbundled tools. It still needs a manual check in the app.

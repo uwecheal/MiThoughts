@@ -26,6 +26,11 @@ struct MapStyle: Codable, Equatable {
     var rainbowStartHex = "268BD2"
     var rainbowClockwise = true
     var inheritColor = true
+    /// iThoughts' dark custom canvases draw topics as a coloured outline on a
+    /// dark body instead of a solid fill. Optional so older saved styles decode.
+    var outlinedTopics: Bool?
+
+    var drawsOutlinedTopics: Bool { outlinedTopics ?? false }
 
     init() { }
 
@@ -66,6 +71,8 @@ struct MapStyle: Codable, Equatable {
         if let canvasColorHex {
             canvasIsDark = reader.canvas?["dark"] == "1" || Self.luminance(canvasColorHex) < 0.42
         }
+        // Seen in iThoughts' own renderings: custom dark canvases outline their topics.
+        outlinedTopics = canvasStyle == -1 && reader.canvas?["dark"] == "1"
     }
 
     /// Colour of the `index`-th main branch when iThoughts' rainbow colouring is on:

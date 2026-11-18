@@ -363,7 +363,12 @@ private struct ImportBuilder {
             imageData: imageData,
             imageName: imageName,
             imageWidth: imageWidth,
-            isCallout: attributes["callout"] == "1"
+            isCallout: attributes["callout"] == "1",
+            numbering: attributes["numbering"].flatMap { $0.isEmpty ? nil : $0 },
+            subLayout: attributes["map-layout"].flatMap(Int.init),
+            subLevel1Link: attributes["l1-link"],
+            subLevelNLink: attributes["ln-link"],
+            textColorHex: attributes["text-color"].flatMap { TopicColor.normalizedHex($0) }
         )
 
         let node = CanvasNode(

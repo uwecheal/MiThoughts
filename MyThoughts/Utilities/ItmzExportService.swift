@@ -12,6 +12,32 @@ final class ItmzEditingSession {
     /// MyThoughts canvas coordinates = iThoughts coordinates + offset.
     var canvasOffset: CGPoint
 
+    /// iThoughts groups (`<group type color member0…>`), mapped to node ids once; drawn as boxes.
+    lazy var groups: [CanvasGroupBox] = {
+        var nodeIDByUUID: [String: UUID] = [:]
+        for (id, uuid) in topicUUIDs {
+            nodeIDByUUID[uuid.lowercased()] = id
+        }
+        return document.groups.compactMap { element -> CanvasGroupBox? in
+            let attributes = element.attributeDictionary
+            guard attributes["type"] != "-1" else {
+                return nil
+            }
+            let members = attributes
+                .filter { ItmzDocument.isMemberAttribute($0.key) }
+                .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+                .compactMap { nodeIDByUUID[$0.value.lowercased()] }
+            guard !members.isEmpty else {
+                return nil
+            }
+            return CanvasGroupBox(
+                colorHex: attributes["color"].flatMap { TopicColor.normalizedHex($0) },
+                isFilled: attributes["type"] != "1",
+                memberIDs: members
+            )
+        }
+    }()
+
     init(document: ItmzDocument, topicUUIDs: [UUID: String], relationshipUUIDs: [UUID: String], canvasOffset: CGPoint) {
         self.document = document
         self.topicUUIDs = topicUUIDs

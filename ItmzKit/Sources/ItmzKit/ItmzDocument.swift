@@ -77,6 +77,9 @@ final class ItmzDocument {
     private(set) var xml: ItmzXMLDocument
     private(set) var style: ItmzXMLElement?
     var fileURL: URL?
+    /// Read from an iThoughts 3 `map.itm` archive and translated to the current
+    /// format; it must be saved to a new file, never back over the original.
+    private(set) var isLegacyFormat = false
 
     var root: ItmzXMLElement { xml.root }
 
@@ -95,6 +98,18 @@ final class ItmzDocument {
             names.append(entry.name)
             files[entry.name] = entry.data
         }
+        var isLegacy = false
+        if files["mapdata.xml"] == nil, let legacy = files["map.itm"],
+           let converted = try? ItmzLegacy.convert(mapItm: legacy) {
+            // Saved as a current .itmz: mapdata.xml first, style.xml, and the old entry dropped.
+            files["map.itm"] = nil
+            files["mapdata.xml"] = converted.mapData
+            if files["style.xml"] == nil {
+                files["style.xml"] = converted.style
+            }
+            names = ["mapdata.xml", "style.xml"] + names.filter { $0 != "map.itm" && $0 != "mapdata.xml" && $0 != "style.xml" }
+            isLegacy = true
+        }
         guard let mapData = files["mapdata.xml"] else {
             throw ItmzError.missingMapData
         }
@@ -106,6 +121,7 @@ final class ItmzDocument {
         self.files = files
         self.xml = xml
         self.fileURL = fileURL
+        self.isLegacyFormat = isLegacy
         if let styleData = files["style.xml"] {
             style = try? ItmzXMLDocument(data: styleData).root
         }
@@ -513,7 +529,7 @@ final class ItmzDocument {
         }
     }
 
-    private static func isMemberAttribute(_ name: String) -> Bool {
+    static func isMemberAttribute(_ name: String) -> Bool {
         name.hasPrefix("member") && !name.dropFirst(6).isEmpty && name.dropFirst(6).allSatisfy(\.isNumber)
     }
 

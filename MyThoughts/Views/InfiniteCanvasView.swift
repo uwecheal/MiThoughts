@@ -23,6 +23,8 @@ struct InfiniteCanvasView: View {
     @State private var relationships: [CanvasRelationship] = []
     /// Set while an .itmz file is open: saving writes back into the original file's DOM.
     @State private var itmzSession: ItmzEditingSession?
+    /// The iThoughts 3 file a converted (still unsaved) map came from; shown in the title.
+    @State private var legacySourceURL: URL?
     /// "Add Relationship" mode: the next clicked topic becomes the other end.
     @State private var relationshipSourceID: CanvasNode.ID?
     @State private var selectedRelationshipID: CanvasRelationship.ID?
@@ -446,6 +448,8 @@ struct InfiniteCanvasView: View {
                 if appearance.showQuadrants {
                     quadrantLayer(in: geometry.size)
                 }
+
+                groupLayer(in: geometry.size)
 
                 boundaryLayer(in: geometry.size)
 
@@ -1345,7 +1349,8 @@ struct InfiniteCanvasView: View {
     private func saveCurrentFileAs() -> Bool {
         isShowingAppearancePopover = false
 
-        let isITMZ = isITMZFile(currentFileURL)
+        // An old-format iThoughts map opened untitled is saved as a current .itmz by default.
+        let isITMZ = isITMZFile(currentFileURL) || (currentFileURL == nil && itmzSession != nil)
         let savePanel = NSSavePanel()
         savePanel.title = "Save Map"
         savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .mythoughts for MyThoughts-only features."
@@ -1684,9 +1689,12 @@ struct InfiniteCanvasView: View {
             return
         }
 
+        let legacyTitle = itmzSession == nil ? nil : legacySourceURL.map {
+            "\($0.deletingPathExtension().lastPathComponent) — converted from iThoughts 3"
+        }
         let baseTitle = currentFileURL.map { url in
             isITMZFile(url) ? "\(url.lastPathComponent) — iThoughts" : url.lastPathComponent
-        } ?? "Untitled"
+        } ?? legacyTitle ?? "Untitled"
         let title = isDirty ? "\(baseTitle) *" : baseTitle
 
         let fileURL = currentFileURL
@@ -2088,17 +2096,25 @@ struct InfiniteCanvasView: View {
                 centerCanvas(on: rootID)
             }
 
-            currentFileURL = url
+            // iThoughts 3 maps are converted on open; they are saved to a new
+            // file in the current format, never back over the original.
+            let isLegacy = opened.session.document.isLegacyFormat
+            currentFileURL = isLegacy ? nil : url
+            legacySourceURL = isLegacy ? url : nil
             RecentFilesStore.add(url)
             lastSavedAt = Date()
             documentCreatedAt = Date()
-            isDirty = false
+            isDirty = isLegacy
             saveNodes(markDirty: false)
             hasCenteredInitialContent = true
             isShowingStartScreen = false
             updateWindowTitle()
 
             var message = "Opened iThoughts map (\(result.report.importedDescription))."
+            if isLegacy {
+                message += "\n\nThis map uses the older iThoughts 3 format. It was converted; Save asks for a new file "
+                    + "(current .itmz format) and leaves \(url.lastPathComponent) unchanged."
+            }
             if let notes = result.report.notImportedDescription {
                 message += "\n\n\(notes)"
             }
@@ -2540,6 +2556,37 @@ struct InfiniteCanvasView: View {
         )
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
+    }
+
+    /// iThoughts group boxes (kept in the .itmz file): each spans its members' visible branches.
+    private func groupLayer(in size: CGSize) -> some View {
+        let defaultColor = appearance.themeColors(for: colorScheme).connection
+        let groups = itmzSession?.groups ?? []
+        let items: [(rect: CGRect, color: Color, isFilled: Bool)] = groups.compactMap { group in
+            var rect: CGRect?
+            var stack = group.memberIDs
+            var visited = Set<CanvasNode.ID>()
+            while let id = stack.popLast() {
+                guard visited.insert(id).inserted, let node = derivedData.visibleNodesByID[id] else {
+                    continue
+                }
+                let nodeRect = CGRect(x: node.x, y: node.y, width: node.width, height: node.height)
+                rect = rect.map { $0.union(nodeRect) } ?? nodeRect
+                stack.append(contentsOf: (derivedData.childrenByParent[id] ?? []).map(\.id))
+            }
+            guard let canvasRect = rect?.insetBy(dx: -14, dy: -14) else {
+                return nil
+            }
+            let origin = canvasToScreenPosition(canvasRect.origin)
+            return (
+                CGRect(x: origin.x, y: origin.y, width: canvasRect.width * zoomScale, height: canvasRect.height * zoomScale),
+                TopicColor.color(group.colorHex) ?? defaultColor,
+                group.isFilled
+            )
+        }
+        return GroupLayerView(items: items, scale: zoomScale)
+            .frame(width: size.width, height: size.height)
+            .allowsHitTesting(false)
     }
 
     private func boundaryLayer(in size: CGSize) -> some View {
@@ -4921,6 +4968,21 @@ struct InfiniteCanvasView: View {
 
             Divider()
 
+            if let mapStyle = appearance.mapStyle, mapStyle.isEnabled {
+                Toggle(
+                    "Outlined Topics",
+                    isOn: Binding(
+                        get: { mapStyle.drawsOutlinedTopics },
+                        set: { newValue in
+                            updateAppearance {
+                                $0.mapStyle?.outlinedTopics = newValue
+                            }
+                        }
+                    )
+                )
+                .help("Coloured border on a dark body, as iThoughts draws dark canvases.")
+            }
+
             if let mapStyle = appearance.mapStyle {
                 Toggle(
                     "iThoughts Map Style",
@@ -5206,6 +5268,7 @@ struct InfiniteCanvasView: View {
             zoomScale: zoomScale,
             hasChildren: hasChildren(wrappedNode.id),
             fillHex: derivedData.effectiveColorHexByNodeID[wrappedNode.id],
+            numberPrefix: derivedData.numberPrefixByNodeID[wrappedNode.id],
             isRelationshipSource: relationshipSourceID == wrappedNode.id,
             relationshipMenuItems: relationshipMenuItems,
             knownResources: derivedData.knownResources,
@@ -5432,7 +5495,9 @@ struct InfiniteCanvasView: View {
                 end: canvasToScreenPosition(segment.end),
                 colorHex: segment.colorHex,
                 isLevel1: segment.isLevel1,
-                isCallout: segment.isCallout
+                isCallout: segment.isCallout,
+                styleOverride: segment.styleOverride,
+                isVertical: segment.isVertical
             )
         }
 
@@ -5552,6 +5617,10 @@ private struct CanvasDerivedData {
     var boundaries: [(rect: CGRect, colorHex: String?)] = []
     /// Every resource name used in the map, sorted (for the Task ▸ Resources menu).
     var knownResources: [String] = []
+    /// iThoughts auto-numbering prefixes ("1.2 ").
+    var numberPrefixByNodeID: [CanvasNode.ID: String] = [:]
+    /// Any topic starts an iThoughts sub-map layout (map-layout).
+    var hasSubLayouts = false
 
     init() { }
 
@@ -5588,6 +5657,10 @@ private struct CanvasDerivedData {
         } ?? Self.effectiveColors(nodes: nodes, nodesByID: nodesByID)
         knownResources = Array(Set(nodes.flatMap(\.resources)))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        if nodes.contains(where: { $0.style.numbering != nil }) {
+            numberPrefixByNodeID = TopicNumbering.prefixes(nodes: nodes, childrenByParent: childrenByParent)
+        }
+        hasSubLayouts = nodes.contains { $0.style.subLayout != nil }
         boundaries = Self.boundaries(
             visibleNodes: visibleNodes,
             visibleNodesByID: visibleNodesByID,
@@ -5601,21 +5674,18 @@ private struct CanvasDerivedData {
             displayedEffortByNodeID[node.id] = Self.displayedEffort(for: node, childrenByParent: childrenByParent)
         }
 
+        let visibleIDs = visibleNodeIDs
+        let colors = effectiveColorHexByNodeID
+        let subLayouts = hasSubLayouts
         visibleConnectionSegments = connections.compactMap { connection in
             guard let parentNode = nodesByID[connection.fromNodeID],
                   let childNode = nodesByID[connection.toNodeID],
-                  visibleNodeIDs.contains(parentNode.id),
-                  visibleNodeIDs.contains(childNode.id) else {
+                  visibleIDs.contains(parentNode.id),
+                  visibleIDs.contains(childNode.id) else {
                 return nil
             }
-
-            return ConnectionSegment(
-                start: Self.connectionStartPoint(from: parentNode, to: childNode),
-                end: Self.connectionEndPoint(from: parentNode, to: childNode),
-                colorHex: effectiveColorHexByNodeID[childNode.id],
-                isLevel1: parentNode.parentID == nil && !childNode.style.isCallout,
-                isCallout: childNode.style.isCallout
-            )
+            return Self.segment(parent: parentNode, child: childNode, colorHex: colors[childNode.id],
+                                checksSubLayouts: subLayouts) { nodesByID[$0] }
         }
     }
 
@@ -5658,13 +5728,8 @@ private struct CanvasDerivedData {
                   let childNode = visibleNodesByID[connection.toNodeID] else {
                 return nil
             }
-            return ConnectionSegment(
-                start: Self.connectionStartPoint(from: parentNode, to: childNode),
-                end: Self.connectionEndPoint(from: parentNode, to: childNode),
-                colorHex: effectiveColorHexByNodeID[childNode.id],
-                isLevel1: parentNode.parentID == nil && !childNode.style.isCallout,
-                isCallout: childNode.style.isCallout
-            )
+            return Self.segment(parent: parentNode, child: childNode, colorHex: effectiveColorHexByNodeID[childNode.id],
+                                checksSubLayouts: hasSubLayouts) { visibleNodesByID[$0] }
         }
         if !boundaries.isEmpty {
             boundaries = Self.boundaries(
@@ -5909,6 +5974,54 @@ private struct CanvasDerivedData {
         CGPoint(x: node.x + node.width / 2, y: node.y + node.height / 2)
     }
 
+    /// One branch line. Inside an iThoughts sub-map (`map-layout` on an ancestor)
+    /// the sub-map's own line shapes apply, and top-down layouts run vertically.
+    private static func segment(
+        parent: CanvasNode,
+        child: CanvasNode,
+        colorHex: String?,
+        checksSubLayouts: Bool,
+        lookup: (CanvasNode.ID) -> CanvasNode?
+    ) -> ConnectionSegment {
+        var styleOverride: CanvasAppearance.ConnectionLineStyle?
+        var isVertical = false
+        if checksSubLayouts {
+            var current: CanvasNode? = parent
+            var depth = 1
+            while let node = current, depth < 64 {
+                if let layout = node.style.subLayout {
+                    styleOverride = MapStyle.lineStyle(code: depth == 1 ? node.style.subLevel1Link : node.style.subLevelNLink)
+                    isVertical = layout == 2 || layout == 3
+                    break
+                }
+                current = node.parentID.flatMap(lookup)
+                depth += 1
+            }
+        }
+
+        let start: CGPoint
+        let end: CGPoint
+        if isVertical {
+            let parentCenter = nodeCenter(parent)
+            let childCenter = nodeCenter(child)
+            let below = childCenter.y >= parentCenter.y
+            start = CGPoint(x: parentCenter.x, y: below ? parent.y + parent.height : parent.y)
+            end = CGPoint(x: childCenter.x, y: below ? child.y : child.y + child.height)
+        } else {
+            start = connectionStartPoint(from: parent, to: child)
+            end = connectionEndPoint(from: parent, to: child)
+        }
+        return ConnectionSegment(
+            start: start,
+            end: end,
+            colorHex: colorHex,
+            isLevel1: parent.parentID == nil && !child.style.isCallout && styleOverride == nil,
+            isCallout: child.style.isCallout,
+            styleOverride: styleOverride,
+            isVertical: isVertical
+        )
+    }
+
     private static func connectionStartPoint(from parentNode: CanvasNode, to childNode: CanvasNode) -> CGPoint {
         let parentCenter = nodeCenter(parentNode)
         let childCenter = nodeCenter(childNode)
@@ -5932,6 +6045,10 @@ private struct ConnectionSegment {
     var isLevel1 = false
     /// Link to a callout bubble: drawn dashed.
     var isCallout = false
+    /// Line shape set by an iThoughts sub-map layout on an ancestor.
+    var styleOverride: CanvasAppearance.ConnectionLineStyle? = nil
+    /// Top-down / vertical sub-map: the line leaves the parent's bottom (or top).
+    var isVertical = false
 }
 
 private struct SummaryRenderItem {
@@ -5951,6 +6068,8 @@ private struct ConnectionLayerView: View {
         var colorHex: String?
         var isLevel1: Bool
         var isCallout: Bool
+        var styleOverride: CanvasAppearance.ConnectionLineStyle?
+        var isVertical: Bool
     }
 
     var body: some View {
@@ -5958,16 +6077,18 @@ private struct ConnectionLayerView: View {
             // Branch lines take their topic's colour, like iThoughts; main
             // branches can have their own shape and weight.
             let groups = Dictionary(grouping: segments) {
-                GroupKey(colorHex: $0.colorHex, isLevel1: $0.isLevel1, isCallout: $0.isCallout)
+                GroupKey(colorHex: $0.colorHex, isLevel1: $0.isLevel1, isCallout: $0.isCallout,
+                         styleOverride: $0.styleOverride, isVertical: $0.isVertical)
             }
             for (key, group) in groups {
-                let style = appearance.lineStyle(level1: key.isLevel1)
+                let style = key.styleOverride ?? appearance.lineStyle(level1: key.isLevel1)
                 var path = Path()
                 for segment in group {
                     ConnectionLinePathBuilder.addConnection(
                         from: segment.start,
                         to: segment.end,
                         style: style,
+                        vertical: key.isVertical,
                         to: &path
                     )
                 }
@@ -6023,9 +6144,12 @@ private struct NodeVisualStyle {
     var fontPointSize: CGFloat
     var cornerRadius: CGFloat
     var showsShadow: Bool
+    /// Coloured outline on the canvas-dark body instead of a solid colour fill.
+    var outlinedTopics: Bool
 
     init(appearance: CanvasAppearance, colors: CanvasThemeColors) {
         style = appearance.nodeStyle
+        outlinedTopics = appearance.activeMapStyle?.drawsOutlinedTopics ?? false
         backgroundColor = colors.nodeBackground
         borderColor = colors.nodeBorder
         selectedBorderColor = colors.selectedBorder
@@ -6115,6 +6239,8 @@ private struct NodeView: View {
     let zoomScale: CGFloat
     let hasChildren: Bool
     let fillHex: String?
+    /// iThoughts auto-numbering shown before the title ("1.2 "), display only.
+    var numberPrefix: String? = nil
     let isRelationshipSource: Bool
     let relationshipMenuItems: [RelationshipMenuItem]
     let knownResources: [String]
@@ -6192,7 +6318,7 @@ private struct NodeView: View {
                         }
 
                         if !node.title.isEmpty || topicImage == nil {
-                            Text(TopicText.attributed(node.title))
+                            Text(numberPrefix.map { AttributedString($0) + TopicText.attributed(node.title) } ?? TopicText.attributed(node.title))
                                 .font(titleFont)
                                 .strikethrough(taskIndicators.completionVisible, color: textColor.opacity(0.5))
                                 .foregroundStyle(textColor.opacity(taskIndicators.completionVisible ? 0.6 : 1))
@@ -6394,11 +6520,17 @@ private struct NodeView: View {
     }
 
     private var fillColor: Color {
-        TopicColor.color(fillHex) ?? visualStyle.backgroundColor
+        if visualStyle.outlinedTopics {
+            return visualStyle.backgroundColor
+        }
+        return TopicColor.color(fillHex) ?? visualStyle.backgroundColor
     }
 
     private var textColor: Color {
-        if let fillHex, resolvedShape.isFilled {
+        if let ownHex = node.style.textColorHex, let own = TopicColor.color(ownHex) {
+            return own
+        }
+        if let fillHex, resolvedShape.isFilled, !visualStyle.outlinedTopics {
             return TopicColor.textColor(onFill: fillHex)
         }
         return visualStyle.textColor
@@ -6444,6 +6576,9 @@ private struct NodeView: View {
             return visualStyle.selectedBorderColor
         }
         if let fillHex {
+            if visualStyle.outlinedTopics {
+                return TopicColor.color(fillHex) ?? visualStyle.borderColor
+            }
             return resolvedShape.isFilled ? TopicColor.borderColor(forFill: fillHex) : (TopicColor.color(fillHex) ?? visualStyle.borderColor)
         }
         return visualStyle.borderColor
@@ -6454,7 +6589,8 @@ private struct NodeView: View {
             return 3
         }
 
-        return isPrimarySelected ? 2.5 : (isSelected ? 2 : 1)
+        let base: CGFloat = visualStyle.outlinedTopics && fillHex != nil ? 1.6 : 1
+        return isPrimarySelected ? 2.5 : (isSelected ? 2 : base)
     }
 
     private var nodeDragGesture: some Gesture {

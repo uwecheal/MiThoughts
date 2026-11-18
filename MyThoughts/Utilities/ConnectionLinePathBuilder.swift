@@ -5,8 +5,16 @@ enum ConnectionLinePathBuilder {
         from start: CGPoint,
         to end: CGPoint,
         style: CanvasAppearance.ConnectionLineStyle,
+        vertical: Bool = false,
         to path: inout Path
     ) {
+        if vertical {
+            // Same shapes turned 90°: build them in swapped coordinates.
+            var swapped = Path()
+            addConnection(from: CGPoint(x: start.y, y: start.x), to: CGPoint(x: end.y, y: end.x), style: style, to: &swapped)
+            path.addPath(swapped.applying(CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)))
+            return
+        }
         path.move(to: start)
 
         switch style {

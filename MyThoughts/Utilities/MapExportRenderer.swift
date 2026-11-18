@@ -494,8 +494,12 @@ private struct ExportNodeView: View {
         node.style.shape ?? appearance.nodeStyle.topicShape
     }
 
+    private var outlined: Bool {
+        appearance.activeMapStyle?.drawsOutlinedTopics ?? false
+    }
+
     private var textColor: Color {
-        if let fillHex, shape.isFilled {
+        if let fillHex, shape.isFilled, !outlined {
             return TopicColor.textColor(onFill: fillHex)
         }
         return colors.nodeText
@@ -537,9 +541,11 @@ private struct ExportNodeView: View {
         ZStack {
             TopicBoxBackground(
                 shape: shape,
-                fill: TopicColor.color(fillHex) ?? colors.nodeBackground,
-                stroke: fillHex.map { shape.isFilled ? TopicColor.borderColor(forFill: $0) : (TopicColor.color($0) ?? colors.nodeBorder) } ?? colors.nodeBorder,
-                lineWidth: 1,
+                fill: outlined ? colors.nodeBackground : (TopicColor.color(fillHex) ?? colors.nodeBackground),
+                stroke: fillHex.map {
+                    outlined || !shape.isFilled ? (TopicColor.color($0) ?? colors.nodeBorder) : TopicColor.borderColor(forFill: $0)
+                } ?? colors.nodeBorder,
+                lineWidth: outlined && fillHex != nil ? 1.6 : 1,
                 shadow: showsShadow ? colors.shadow : nil,
                 cornerRadius: cornerRadius
             )
