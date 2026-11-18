@@ -99,6 +99,15 @@ enum MyThoughtsFileCommand {
 enum MyThoughtsViewCommand {
     static let toggleOutline = Notification.Name("MyThoughtsViewCommand.toggleOutline")
     static let addRelationship = Notification.Name("MyThoughtsViewCommand.addRelationship")
+    static let toggleNotes = Notification.Name("MyThoughtsViewCommand.toggleNotes")
+    static let editNotes = Notification.Name("MyThoughtsViewCommand.editNotes")
+    static let find = Notification.Name("MyThoughtsViewCommand.find")
+    static let zoomIn = Notification.Name("MyThoughtsViewCommand.zoomIn")
+    static let zoomOut = Notification.Name("MyThoughtsViewCommand.zoomOut")
+    static let fitMap = Notification.Name("MyThoughtsViewCommand.fitMap")
+    static let fitSelection = Notification.Name("MyThoughtsViewCommand.fitSelection")
+    static let createReminder = Notification.Name("MyThoughtsViewCommand.createReminder")
+    static let createEvent = Notification.Name("MyThoughtsViewCommand.createEvent")
 }
 
 enum BranchOperation {

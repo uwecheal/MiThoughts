@@ -682,6 +682,40 @@ struct InfiniteCanvasView: View {
             .onReceive(commandPublisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 syncWithApple(isAutomatic: true)
             }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.toggleNotes)) { _ in
+                notePanelSettings.isVisible.toggle()
+                saveNotePanelSettings()
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.editNotes)) { _ in
+                openNotePanel()
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.find)) { _ in
+                openSearchPanel()
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.zoomIn)) { _ in
+                zoom(by: 1.25)
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.zoomOut)) { _ in
+                zoom(by: 0.8)
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.fitMap)) { _ in
+                fit(derivedData.visibleNodes)
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.fitSelection)) { _ in
+                fit(derivedData.visibleNodes.filter { selectedNodeIDs.contains($0.id) })
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.createReminder)) { _ in
+                addRemindersForTasks(Array(selectedNodeIDs))
+            }
+            .onReceive(commandPublisher(for: MyThoughtsViewCommand.createEvent)) { _ in
+                guard let selectedNodeID else {
+                    showStatusMessage("Select a topic first.")
+                    return
+                }
+                pendingCalendarCreationNodeID = selectedNodeID
+                pendingCalendarCreationAllowsDuplicate = false
+                isShowingCalendarCreationConfirmation = true
+            }
             .onReceive(commandPublisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
                 addRelationshipFromSelection()
             }
@@ -3689,6 +3723,101 @@ struct InfiniteCanvasView: View {
         }
     }
 
+    /// iThoughts "New Topic ▸ Parent" (⇧Tab): a new topic takes the selected
+    /// topic's place and the selected branch moves under it.
+    private func insertParentForSelectedNode() {
+        guard let childID = selectedNodeID,
+              let childIndex = nodes.firstIndex(where: { $0.id == childID }) else {
+            return
+        }
+        let child = nodes[childIndex]
+        let oldParent = child.parentID.flatMap { id in nodes.first { $0.id == id } }
+        let direction: CGFloat = oldParent.map { child.x + child.width / 2 < $0.x + $0.width / 2 ? -1 : 1 } ?? 1
+        let newParent = CanvasNode(
+            id: UUID(),
+            title: "",
+            x: child.x,
+            y: child.y,
+            width: defaultNodeSize.width,
+            height: defaultNodeSize.height,
+            sortIndex: child.sortIndex,
+            parentID: child.parentID
+        )
+
+        recordUndoSnapshot()
+        let branch = descendantIDs(of: childID).union([childID])
+        for index in nodes.indices where branch.contains(nodes[index].id) {
+            nodes[index].x += direction * childHorizontalOffset
+        }
+        nodes.append(newParent)
+        connections.removeAll { $0.type == "parentChild" && $0.toNodeID == childID }
+        if let oldParentID = child.parentID {
+            ensureParentConnection(from: oldParentID, to: newParent.id)
+        }
+        nodes[childIndex].parentID = newParent.id
+        nodes[childIndex].sortIndex = 0
+        ensureParentConnection(from: newParent.id, to: childID)
+
+        selectedNodeID = newParent.id
+        selectedNodeIDs = [newParent.id]
+        editingNodeID = newParent.id
+        newNodeIDs.insert(newParent.id)
+        saveNodes()
+    }
+
+    /// iThoughts ⌘+ / ⌘-: change the text size of the selected topics.
+    private func stepTextSize(by delta: Double) {
+        let targets = selectedNodeIDs.isEmpty ? Set(selectedNodeID.map { [$0] } ?? []) : selectedNodeIDs
+        guard !targets.isEmpty else {
+            return
+        }
+        recordUndoSnapshot()
+        for index in nodes.indices where targets.contains(nodes[index].id) {
+            let current = nodes[index].style.textSize ?? 14
+            let next = min(max(current + delta, 8), 72)
+            nodes[index].style.textSize = next == 14 ? nil : next
+        }
+        saveNodes()
+    }
+
+    /// Zoom around the middle of the window (⌘> / ⌘<).
+    private func zoom(by factor: CGFloat) {
+        let newScale = clampZoomScale(zoomScale * factor)
+        let center = CGPoint(x: viewportSize.width / 2, y: viewportSize.height / 2)
+        let ratio = newScale / zoomScale
+        panOffset = CGSize(
+            width: center.x - (center.x - panOffset.width) * ratio,
+            height: center.y - (center.y - panOffset.height) * ratio
+        )
+        zoomScale = newScale
+        magnificationStartZoomScale = newScale
+        dragStartPanOffset = panOffset
+    }
+
+    /// Fit Map (⌘0) / Fit Selection (⇧⌘0).
+    private func fit(_ fitted: [CanvasNode]) {
+        guard let first = fitted.first, viewportSize.width > 0, viewportSize.height > 0 else {
+            return
+        }
+        var bounds = CGRect(x: first.x, y: first.y, width: first.width, height: first.height)
+        for node in fitted.dropFirst() {
+            bounds = bounds.union(CGRect(x: node.x, y: node.y, width: node.width, height: node.height))
+        }
+        let margin: CGFloat = 60
+        let scale = clampZoomScale(min(
+            (viewportSize.width - margin * 2) / max(bounds.width, 1),
+            (viewportSize.height - margin * 2) / max(bounds.height, 1),
+            1.5
+        ))
+        zoomScale = scale
+        panOffset = CGSize(
+            width: viewportSize.width / 2 - bounds.midX * scale,
+            height: viewportSize.height / 2 - bounds.midY * scale
+        )
+        magnificationStartZoomScale = scale
+        dragStartPanOffset = panOffset
+    }
+
     private func createChildForSelectedNode() {
         guard let parentNodeID = selectedNodeID,
               let parentNode = nodes.first(where: { $0.id == parentNodeID }) else {
@@ -4724,10 +4853,36 @@ struct InfiniteCanvasView: View {
             return true
         }
 
+        // iThoughts: ⇧⌘F focus on selected, ⌥⌘F find (and replace), ⌘F find.
+        if event.modifierFlags.contains(.command),
+           event.modifierFlags.contains(.shift),
+           event.charactersIgnoringModifiers?.lowercased() == "f" {
+            toggleFocusModeOnSelectedNode()
+            return true
+        }
+
         if event.modifierFlags.contains(.command),
            event.modifierFlags.contains(.option),
            event.charactersIgnoringModifiers?.lowercased() == "f" {
-            toggleFocusModeOnSelectedNode()
+            openSearchPanel()
+            return true
+        }
+
+        // iThoughts: ⌘A selects all topics, ⌘+ / ⌘- make topic text bigger / smaller.
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.shift),
+           event.charactersIgnoringModifiers?.lowercased() == "a" {
+            selectedNodeIDs = visibleNodeIDs
+            if selectedNodeID == nil {
+                selectedNodeID = derivedData.visibleNodes.first?.id
+            }
+            return true
+        }
+
+        if event.modifierFlags.contains(.command),
+           !event.modifierFlags.contains(.control),
+           let key = event.charactersIgnoringModifiers, ["=", "+", "-"].contains(key) {
+            stepTextSize(by: key == "-" ? -2 : 2)
             return true
         }
 
@@ -4774,8 +4929,13 @@ struct InfiniteCanvasView: View {
             return true
         }
 
+        // iThoughts: Tab adds a child, ⇧Tab inserts a new parent.
         if event.keyCode == KeyCode.tab {
-            createChildForSelectedNode()
+            if event.modifierFlags.contains(.shift) {
+                insertParentForSelectedNode()
+            } else {
+                createChildForSelectedNode()
+            }
             return true
         }
 
@@ -4790,7 +4950,9 @@ struct InfiniteCanvasView: View {
             return true
         }
 
-        if let characters = event.charactersIgnoringModifiers,
+        // Plain digits only: ⌘1 … are iThoughts' priority keys, ⌘0 is Fit Map.
+        if event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+           let characters = event.charactersIgnoringModifiers,
            characters.count == 1,
            let depth = Int(characters),
            (0...9).contains(depth),

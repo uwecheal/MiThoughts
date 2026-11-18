@@ -152,7 +152,7 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
 - While dragging, only the moved positions are patched. Visibility, colours, roll-ups and the outline are no longer rebuilt every frame.
 - Topic views are looked up in O(1), and topics off screen are not built at all on maps with more than 60 topics.
 
-**Write-back fixes** (found by an unchanged-save run over 491 real maps):
+**Write-back fixes** (found by an unchanged-save run over additional local test maps, not part of the repository):
 - `floating="1"` on top-level topics is kept.
 - Floating topics go back to their original slot among their siblings.
 - Single-topic summaries (`summary1 == summary2`) are imported and kept.
@@ -160,10 +160,10 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
 - Groups and relationships that were already dangling in the file are left alone; only references to topics deleted in this save are cleaned up.
 
 **Results**
-- Unchanged save is byte-identical for 195/195 samples and for 275/275 iThoughts 5+ maps in the user's library.
+- Unchanged save is byte-identical for all sample maps and for the additional local test maps.
 
 **Not supported yet**
-- 216 maps in the user's library use the older iThoughts 3 format: `map.itm`, a plist that holds `iThoughtsRelative` XML, with titles stored as archived attributed strings. These maps do not open yet.
+- Maps in the older iThoughts 3 format (`map.itm`, a plist that holds `iThoughtsRelative` XML, with titles stored as archived attributed strings) do not open yet.
 
 ## 38D — Several maps open at once (multi-window)
 
@@ -195,7 +195,7 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
   - Titles and notes that exist only as `txtPLIST`/`notePLIST` are read straight from the keyed archive. A real unarchive fails on the Mac because of iOS font classes.
   - `MapStyle` becomes `style.xml`. For the few maps without one, a style is built from the plist keys.
   - Opened maps are untitled ("<name> — converted from iThoughts 3"). Save writes a new current-format `.itmz`; the original file is never overwritten.
-  - Tested on 216/216 old maps in the user's library (6,491 topics). Save, then reopen, keeps every title, image and relationship. The 304 empty titles are empty in the original too (133 image-only topics, 169 blank).
+  - Tested on local iThoughts 3 test maps (not part of the repository): all open, and save then reopen keeps every title, image and relationship. Topics with empty titles are empty in the original too (image-only or blank topics).
 - **Outlined topics.**
   - On iThoughts' custom dark canvases (`<canvas dark="1">`), topics are drawn as a coloured outline on a dark body, matching iThoughts' renderings. Built-in dark canvases such as `16` keep solid fills.
   - Canvas ▸ Outlined Topics switches this per map.
@@ -207,3 +207,34 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
   - Topic positions come from the file, so the layout itself is kept.
 - **`text-color`**: shown as the topic's text colour.
 - **Reminders sync test.** A one-reminder round trip (create → rename pushes → tick on "phone" pulls → delete unlinks) was written. It could not run from the development shell, because macOS refuses Reminders access to unbundled tools. It still needs a manual check in the app.
+
+## 38F — iThoughtsX keyboard shortcuts, privacy guard
+
+**Shortcuts now match iThoughtsX** (taken from its menu definitions):
+
+| Action | Key |
+|---|---|
+| New map (window) / Open / Save / Print | ⌘N / ⌘O / ⌘S / ⌘P |
+| Outline View | ⇧⌘O |
+| Edit/View Notes · Show/Hide Notes Window | ⌥⌘T · ⇧⌘T |
+| Find · Find (and Replace) | ⌘F · ⌥⌘F |
+| Focus on Selected | ⇧⌘F |
+| Zoom In / Out · Fit Map · Fit Selection | ⌘> / ⌘< · ⌘0 · ⇧⌘0 |
+| Child · Sibling after · Sibling before · Parent | Tab · Return (⌘Return) · ⇧Return · ⇧Tab |
+| Delete | ⌫ / ⌘⌫ |
+| New Relationship | ⌘L |
+| Summary | ⇧⌘G |
+| Priority high / medium / low | ⌘1 / ⌘2 / ⌘3 |
+| Task Panel | ⌃⌥⌘T |
+| Create Reminder · Create Calendar Event | ⇧⌘R · ⌃⌘R |
+| Select All Topics | ⌘A |
+| Text Bigger / Smaller | ⌘+ / ⌘- |
+
+- MyThoughts-only task keys stay: ⌃⌘D done, ⌃⌘= / ⌃⌘- progress, ⌃⌘H hide completed, ⌃⌘S sync.
+- "Due today" lost ⌃⌘T, which iThoughts uses for note editing.
+- Plain digit keys still set the visible depth, but no longer swallow ⌘1 … ⌘0.
+
+**Privacy guard**
+- `.gitignore` excludes map files and exports: `.itmz`, `.itm`, `.mythoughts`, `.mm`, `.opml`, `*.assets/`, `mapdata.xml`, `preview.png`.
+- `.githooks/pre-commit` refuses commits that add such files or local/iCloud paths. Enable it per clone with `git config core.hooksPath .githooks`.
+- Test maps are only ever read from outside the repository.

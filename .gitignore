@@ -34,3 +34,15 @@ Config.local.plist
 # Temporary files
 *.tmp
 *.log
+
+# Private mind maps and exports — never commit map files or their exports.
+# Test maps stay outside the repository (see ITMZ_SAMPLES in ItmzKit tests).
+*.itmz
+*.itm
+*.itmz-style
+*.mythoughts
+*.mm
+*.opml
+*.assets/
+preview.png
+mapdata.xml

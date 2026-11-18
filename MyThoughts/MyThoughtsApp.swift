@@ -179,11 +179,33 @@ struct MyThoughtsCommands: Commands {
             }
 
             // Into the system View menu (a WindowGroup already has one).
+            // Shortcuts follow iThoughtsX.
             CommandGroup(before: .toolbar) {
-                Button(isOutlineVisible ? "Hide Outline" : "Show Outline") {
+                Button(isOutlineVisible ? "Hide Outline" : "Outline View") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleOutline, object: nil)
                 }
-                .keyboardShortcut("o", modifiers: [.command, .option])
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button("Edit/View Notes") { NotificationCenter.default.post(name: MyThoughtsViewCommand.editNotes, object: nil) }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                Button("Show/Hide Notes Window") { NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleNotes, object: nil) }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Find…") { NotificationCenter.default.post(name: MyThoughtsViewCommand.find, object: nil) }
+                    .keyboardShortcut("f", modifiers: [.command])
+
+                Menu("Zoom") {
+                    Button("Zoom In") { NotificationCenter.default.post(name: MyThoughtsViewCommand.zoomIn, object: nil) }
+                        .keyboardShortcut(">", modifiers: [.command])
+                    Button("Zoom Out") { NotificationCenter.default.post(name: MyThoughtsViewCommand.zoomOut, object: nil) }
+                        .keyboardShortcut("<", modifiers: [.command])
+                    Button("Fit Map") { NotificationCenter.default.post(name: MyThoughtsViewCommand.fitMap, object: nil) }
+                        .keyboardShortcut("0", modifiers: [.command])
+                    Button("Fit Selection") { NotificationCenter.default.post(name: MyThoughtsViewCommand.fitSelection, object: nil) }
+                        .keyboardShortcut("0", modifiers: [.command, .shift])
+                }
             }
 
             CommandMenu("Task") {
@@ -193,10 +215,17 @@ struct MyThoughtsCommands: Commands {
 
                 Divider()
 
-                Button("Show Task List") {
+                Button("Show Task Panel") {
                     NotificationCenter.default.post(name: TaskCommand.toggleTaskList, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.command, .option])
+                .keyboardShortcut("t", modifiers: [.command, .option, .control])
+
+                Divider()
+
+                Button("Create Reminder") { NotificationCenter.default.post(name: MyThoughtsViewCommand.createReminder, object: nil) }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Create Calendar Event") { NotificationCenter.default.post(name: MyThoughtsViewCommand.createEvent, object: nil) }
+                    .keyboardShortcut("r", modifiers: [.command, .control])
 
                 Button("Hide/Show Completed Tasks") {
                     NotificationCenter.default.post(name: TaskCommand.toggleHideCompleted, object: nil)
@@ -213,7 +242,7 @@ struct MyThoughtsCommands: Commands {
                 Button("Relationship") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.addRelationship, object: nil)
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .keyboardShortcut("l", modifiers: [.command])
             }
 
             CommandMenu("Branch") {
@@ -248,6 +277,7 @@ struct MyThoughtsCommands: Commands {
                 Button("Create Summary") {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.createSummary)
                 }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
 
                 Divider()
 
@@ -268,6 +298,7 @@ struct MyThoughtsCommands: Commands {
                 Button("Focus on Branch") {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.focus)
                 }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             }
 
             CommandMenu("Arrange") {
