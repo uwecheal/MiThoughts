@@ -60,6 +60,8 @@ struct InfiniteCanvasView: View {
     @State private var isShowingStartScreen: Bool
     @State private var currentFileURL: URL?
     @State private var isDirty = false
+    /// Set when unsaved changes from the last session were brought back at launch.
+    @State private var recoveredSourceName: String?
     @State private var lastSavedAt: Date?
     @State private var documentCreatedAt: Date
     @State private var statusMessage = ""
@@ -99,7 +101,13 @@ struct InfiniteCanvasView: View {
         // every other window starts empty (or with its own file).
         let owns = windowFileURL.wrappedValue == nil && MainActor.assumeIsolated { AutosaveOwnership.claim() }
         _ownsAutosave = State(initialValue: owns)
-        let document = owns ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
+        // Only unsaved work comes back; otherwise the window opens on the start screen
+        // instead of whatever map was last on the canvas.
+        let recovers = owns && AutosaveInfo.hasUnsavedChanges
+        let document = recovers ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
+        _isDirty = State(initialValue: recovers && !document.nodes.isEmpty)
+        _recoveredSourceName = State(initialValue: recovers && !document.nodes.isEmpty
+            ? (AutosaveInfo.sourceFileName ?? "an untitled map") : nil)
         var notePanelSettings = NotePanelSettings.load()
         notePanelSettings.position = .right
         var loadedNodes = document.nodes
@@ -558,6 +566,10 @@ struct InfiniteCanvasView: View {
                     guard isEventForThisWindow(event) else {
                         return false
                     }
+                    // Keyboard work on the canvas hides the pointer until the mouse moves.
+                    if event.window === windowRef.window {
+                        NSCursor.setHiddenUntilMouseMoves(true)
+                    }
                     return handleKeyEvent(event)
                 }
             )
@@ -583,7 +595,22 @@ struct InfiniteCanvasView: View {
                 isCanvasFocused = true
                 updateWindowTitle()
                 DispatchQueue.main.async {
+                    if let source = recoveredSourceName {
+                        recoveredSourceName = nil
+                        isShowingStartScreen = false
+                        showStatusMessage("Recovered unsaved changes from \(source). Save them (⌘S) to keep them, or start a new map.")
+                    }
                     if let url = windowFileURL, currentFileURL == nil, nodes.isEmpty {
+                        // macOS can restore two windows for one file; the later one bows out.
+                        let target = url.standardizedFileURL
+                        let firstOwner = MapWindowRegistry.shared.entries.first {
+                            $0.fileURL()?.standardizedFileURL == target
+                        }
+                        if let firstOwner, firstOwner.id != windowID {
+                            firstOwner.windowRef.window?.makeKeyAndOrderFront(nil)
+                            windowRef.window?.close()
+                            return
+                        }
                         openMyThoughtsFile(at: url)
                     }
                     openPendingExternalFile()
@@ -625,8 +652,11 @@ struct InfiniteCanvasView: View {
                     windowFileURL = newValue
                 }
             }
-            .onChange(of: isDirty) { _, _ in
+            .onChange(of: isDirty) { _, newValue in
                 updateWindowTitle()
+                if ownsAutosave {
+                    AutosaveInfo.record(hasUnsavedChanges: newValue && !nodes.isEmpty, fileURL: currentFileURL)
+                }
             }
             .onChange(of: isShowingStartScreen) { _, _ in
                 updateWindowTitle()
@@ -704,6 +734,9 @@ struct InfiniteCanvasView: View {
             }
             .onReceive(commandPublisher(for: MyThoughtsViewCommand.editNotes)) { _ in
                 openNotePanel()
+                DispatchQueue.main.async {
+                    isNoteEditorFocused = true
+                }
             }
             .onReceive(commandPublisher(for: MyThoughtsViewCommand.find)) { _ in
                 openSearchPanel()
@@ -1002,6 +1035,7 @@ struct InfiniteCanvasView: View {
         if event.modifierFlags.contains(.command) {
             let delta = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 8
             zoom(by: exp(delta * 0.01))
+            NSCursor.setHiddenUntilMouseMoves(true)
             return true
         }
         let dx = precise ? event.scrollingDeltaX : event.scrollingDeltaX * 10
@@ -1011,6 +1045,8 @@ struct InfiniteCanvasView: View {
         }
         panOffset = CGSize(width: panOffset.width + dx, height: panOffset.height + dy)
         dragStartPanOffset = panOffset
+        // Two-finger panning doesn't move the pointer, so keep it out of the way.
+        NSCursor.setHiddenUntilMouseMoves(true)
         return true
     }
 
@@ -5550,6 +5586,28 @@ struct InfiniteCanvasView: View {
             hasChildren: hasChildren(wrappedNode.id),
             fillHex: derivedData.effectiveColorHexByNodeID[wrappedNode.id],
             numberPrefix: derivedData.numberPrefixByNodeID[wrappedNode.id],
+            onEditNote: {
+                selectSingleNode(wrappedNode.id)
+                openNotePanel()
+                DispatchQueue.main.async {
+                    isNoteEditorFocused = true
+                }
+            },
+            onResizeBegan: {
+                recordUndoSnapshot()
+            },
+            onResizeEnded: {
+                saveNodes()
+            },
+            onFitToContent: {
+                guard let index = nodes.firstIndex(where: { $0.id == wrappedNode.id }) else {
+                    return
+                }
+                recordUndoSnapshot()
+                nodes[index].style.textWidth = nil
+                resizeToFitContent(at: index)
+                saveNodes()
+            },
             isRelationshipSource: relationshipSourceID == wrappedNode.id,
             relationshipMenuItems: relationshipMenuItems,
             knownResources: derivedData.knownResources,
@@ -6524,6 +6582,11 @@ private struct NodeView: View {
     let fillHex: String?
     /// iThoughts auto-numbering shown before the title ("1.2 "), display only.
     var numberPrefix: String? = nil
+    var onEditNote: () -> Void = {}
+    var onResizeBegan: () -> Void = {}
+    var onResizeEnded: () -> Void = {}
+    var onFitToContent: () -> Void = {}
+    @State private var resizeStartSize: CGSize?
     let isRelationshipSource: Bool
     let relationshipMenuItems: [RelationshipMenuItem]
     let knownResources: [String]
@@ -6639,6 +6702,16 @@ private struct NodeView: View {
             }
         }
         .frame(width: node.width * zoomScale, height: node.height * zoomScale)
+        .overlay(alignment: .topTrailing) {
+            if !node.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                noteBadge
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if isPrimarySelected && !isEditing {
+                resizeHandle
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: onEdit)
         .onTapGesture(count: 1, perform: onSelect)
@@ -6647,7 +6720,9 @@ private struct NodeView: View {
                 Button("Add Child", action: onAddChild)
                 Button("Add Sibling", action: onAddSibling)
                 Button("Edit Title", action: onEdit)
+                Button(node.body.isEmpty ? "Add Note" : "Edit Note", action: onEditNote)
                 Button("Edit Details", action: onEditDetails)
+                Button("Fit Size to Content", action: onFitToContent)
                 Menu("Marker") {
                     ForEach(NodeMarker.allCases) { marker in
                         Button {
@@ -6840,6 +6915,58 @@ private struct NodeView: View {
             return CGSize(width: maximumHeight * image.size.width / image.size.height, height: maximumHeight)
         }
         return CGSize(width: width, height: height)
+    }
+
+    /// Shown on topics that have a note (iThoughts note icon); hover previews it, click opens it.
+    private var noteBadge: some View {
+        Image(systemName: "note.text")
+            .font(.system(size: max(9 * zoomScale, 6), weight: .semibold))
+            .foregroundStyle(textColor.opacity(0.85))
+            .padding(3 * zoomScale)
+            .background(Circle().fill(fillColor.opacity(0.9)))
+            .offset(x: 5 * zoomScale, y: -5 * zoomScale)
+            .help(String(node.body.prefix(400)))
+            .onTapGesture(perform: onEditNote)
+    }
+
+    /// Drag to resize the topic (sets its wrap width, like iThoughts); double-click fits the content.
+    private var resizeHandle: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(visualStyle.selectedBorderColor)
+            .frame(width: 9, height: 9)
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.white.opacity(0.9), lineWidth: 1))
+            .offset(x: 4, y: 4)
+            .contentShape(Rectangle().inset(by: -6))
+            .onHover { inside in
+                if inside {
+                    NSCursor.crosshair.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .help("Drag to resize · double-click to fit the content")
+            .onTapGesture(count: 2, perform: onFitToContent)
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named("canvasScreen"))
+                    .onChanged { value in
+                        if resizeStartSize == nil {
+                            resizeStartSize = CGSize(width: node.width, height: node.height)
+                            onResizeBegan()
+                        }
+                        guard let start = resizeStartSize else {
+                            return
+                        }
+                        let width = min(max(start.width + value.translation.width / zoomScale, 60), 1200)
+                        let height = min(max(start.height + value.translation.height / zoomScale, 28), 900)
+                        node.width = width
+                        node.height = height
+                        node.style.textWidth = Double(max(width - 24, 1))
+                    }
+                    .onEnded { _ in
+                        resizeStartSize = nil
+                        onResizeEnded()
+                    }
+            )
     }
 
     private var maximumTitleLines: Int {

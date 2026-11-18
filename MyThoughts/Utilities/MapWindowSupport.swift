@@ -222,6 +222,27 @@ enum WindowOpener {
     static var action: OpenWindowAction?
 }
 
+/// What the crash-safe autosave holds: only unsaved work is brought back at launch,
+/// so the app no longer reopens a stale map every time it starts.
+enum AutosaveInfo {
+    private static let unsavedKey = "MyThoughts.autosave.hasUnsavedChanges"
+    private static let sourceKey = "MyThoughts.autosave.sourceFile"
+
+    static var hasUnsavedChanges: Bool {
+        UserDefaults.standard.bool(forKey: unsavedKey)
+    }
+
+    /// Name of the file the unsaved changes belong to, if any.
+    static var sourceFileName: String? {
+        UserDefaults.standard.string(forKey: sourceKey)
+    }
+
+    static func record(hasUnsavedChanges: Bool, fileURL: URL?) {
+        UserDefaults.standard.set(hasUnsavedChanges, forKey: unsavedKey)
+        UserDefaults.standard.set(fileURL?.lastPathComponent, forKey: sourceKey)
+    }
+}
+
 /// Decides which window restores the autosaved map: the first one opened
 /// without a file. Later windows start empty.
 @MainActor

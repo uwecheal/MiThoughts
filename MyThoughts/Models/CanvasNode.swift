@@ -206,6 +206,8 @@ struct TopicStyle: Equatable, Codable {
     var subLevel1Link: String?
     var subLevelNLink: String?
     var textColorHex: String?
+    /// Text wrap width set by resizing the topic (iThoughts `text-width`); nil = automatic.
+    var textWidth: Double?
 
     init(
         colorHex: String? = nil,
@@ -220,7 +222,8 @@ struct TopicStyle: Equatable, Codable {
         subLayout: Int? = nil,
         subLevel1Link: String? = nil,
         subLevelNLink: String? = nil,
-        textColorHex: String? = nil
+        textColorHex: String? = nil,
+        textWidth: Double? = nil
     ) {
         self.colorHex = colorHex
         self.shape = shape
@@ -235,11 +238,12 @@ struct TopicStyle: Equatable, Codable {
         self.subLevel1Link = subLevel1Link
         self.subLevelNLink = subLevelNLink
         self.textColorHex = textColorHex
+        self.textWidth = textWidth
     }
 
     private enum CodingKeys: String, CodingKey {
         case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth, isCallout
-        case numbering, subLayout, subLevel1Link, subLevelNLink, textColorHex
+        case numbering, subLayout, subLevel1Link, subLevelNLink, textColorHex, textWidth
     }
 
     init(from decoder: Decoder) throws {
@@ -257,6 +261,7 @@ struct TopicStyle: Equatable, Codable {
         subLevel1Link = try container.decodeIfPresent(String.self, forKey: .subLevel1Link)
         subLevelNLink = try container.decodeIfPresent(String.self, forKey: .subLevelNLink)
         textColorHex = try container.decodeIfPresent(String.self, forKey: .textColorHex)
+        textWidth = try container.decodeIfPresent(Double.self, forKey: .textWidth)
     }
 
     var isDefault: Bool { self == TopicStyle() }
