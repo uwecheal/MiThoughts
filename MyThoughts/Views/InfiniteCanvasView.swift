@@ -550,18 +550,16 @@ struct InfiniteCanvasView: View {
                 }
             }
             .background(
-                KeyboardEventMonitor { event in
+                KeyboardEventMonitor(eventMask: [.keyDown, .scrollWheel]) { event in
+                    if event.type == .scrollWheel {
+                        return handleScrollEvent(event)
+                    }
                     // The monitor sees every window's keys; act only on our own.
                     guard isEventForThisWindow(event) else {
                         return false
                     }
                     return handleKeyEvent(event)
                 }
-                .background(
-                    KeyboardEventMonitor(eventMask: .scrollWheel) { event in
-                        handleScrollEvent(event)
-                    }
-                )
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -3269,6 +3267,25 @@ struct InfiniteCanvasView: View {
         }
     }
 
+    private func selectTopicNearestViewCenter() {
+        guard viewportSize.width > 0, viewportSize.height > 0 else {
+            return
+        }
+        let target = screenToCanvasPosition(CGPoint(x: viewportSize.width / 2, y: viewportSize.height / 2))
+        let nearest = derivedData.visibleNodes.min { left, right in
+            let a = nodeCenter(left)
+            let b = nodeCenter(right)
+            return hypot(a.x - target.x, a.y - target.y) < hypot(b.x - target.x, b.y - target.y)
+        }
+        guard let nearest else {
+            return
+        }
+        selectSingleNode(nearest.id)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            centerCanvas(on: nearest.id)
+        }
+    }
+
     private func centerCanvas(on nodeID: CanvasNode.ID) {
         guard let node = nodes.first(where: { $0.id == nodeID }),
               viewportSize.width > 0,
@@ -5059,6 +5076,15 @@ struct InfiniteCanvasView: View {
 
     private func handleArrowKeyEvent(_ event: NSEvent) -> Bool {
         let isCommand = event.modifierFlags.contains(.command)
+        let arrowKeys = [KeyCode.upArrow, KeyCode.downArrow, KeyCode.leftArrow, KeyCode.rightArrow]
+
+        // Nothing selected: an arrow key picks the topic nearest the middle of
+        // the view and centres it, so keyboard navigation can start anywhere.
+        if arrowKeys.contains(event.keyCode),
+           selectedNodeID.map({ !visibleNodeIDs.contains($0) }) ?? true {
+            selectTopicNearestViewCenter()
+            return true
+        }
 
         switch event.keyCode {
         case KeyCode.upArrow:
