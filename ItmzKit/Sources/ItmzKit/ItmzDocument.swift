@@ -63,7 +63,7 @@ final class ItmzDocument {
     /// Callers must pass the original value for every key they did not change, or it is removed.
     static let extendedManagedAttributes = managedAttributes + [
         "shape", "text-size", "boundary", "floating",
-        "task-progress", "task-start", "task-due", "task-priority", "task-effort", "cost", "cost-type",
+        "task-progress", "task-start", "task-due", "task-priority", "task-effort", "cost", "cost-type", "resources",
         "att-id", "att-name", "image-width", "summary1", "summary2"
     ]
 

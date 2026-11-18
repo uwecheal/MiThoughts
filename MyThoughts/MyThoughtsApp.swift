@@ -135,6 +135,29 @@ struct MyThoughtsApp: App {
                 .keyboardShortcut("o", modifiers: [.command, .option])
             }
 
+            CommandMenu("Task") {
+                TaskActionMenuItems(showsShortcuts: true) { action in
+                    TaskCommand.post(action)
+                }
+
+                Divider()
+
+                Button("Show Task List") {
+                    NotificationCenter.default.post(name: TaskCommand.toggleTaskList, object: nil)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .option])
+
+                Button("Hide/Show Completed Tasks") {
+                    NotificationCenter.default.post(name: TaskCommand.toggleHideCompleted, object: nil)
+                }
+                .keyboardShortcut("h", modifiers: [.command, .control])
+
+                Button("Sync with Reminders & Calendar") {
+                    NotificationCenter.default.post(name: TaskCommand.syncApple, object: nil)
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+            }
+
             CommandMenu("Insert") {
                 Button("Relationship") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.addRelationship, object: nil)

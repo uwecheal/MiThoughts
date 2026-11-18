@@ -231,6 +231,23 @@ struct TopicStyle: Equatable, Codable {
     var isDefault: Bool { self == TopicStyle() }
 }
 
+/// Values last agreed between a topic and its Apple Reminder / Calendar event.
+/// Sync compares both sides against this baseline to see which side changed (3-way merge).
+struct AppleSyncBaseline: Equatable, Codable {
+    var title: String
+    var notes: String
+    var startDate: Date?
+    var dueDate: Date?
+    var isCompleted: Bool
+    var priority: TaskPriority
+    var syncedAt: Date
+}
+
+struct AppleSyncState: Equatable, Codable {
+    var reminder: AppleSyncBaseline?
+    var event: AppleSyncBaseline?
+}
+
 struct CanvasNode: Identifiable, Equatable, Codable {
     let id: UUID
     var title: String
@@ -256,6 +273,9 @@ struct CanvasNode: Identifiable, Equatable, Codable {
     var parentID: UUID?
     var isCollapsed: Bool
     var style: TopicStyle
+    /// People or teams assigned to the task (iThoughts `resources`).
+    var resources: [String]
+    var appleSync: AppleSyncState?
     /// For floating topics imported from iThoughts: the topic they float beside.
     /// They are free roots here (no parent line) but are written back under this topic.
     var floatingAnchorID: UUID?
@@ -285,7 +305,9 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         parentID: UUID? = nil,
         isCollapsed: Bool = false,
         style: TopicStyle = TopicStyle(),
-        floatingAnchorID: UUID? = nil
+        floatingAnchorID: UUID? = nil,
+        resources: [String] = [],
+        appleSync: AppleSyncState? = nil
     ) {
         self.id = id
         self.title = title
@@ -312,6 +334,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         self.isCollapsed = isCollapsed
         self.style = style
         self.floatingAnchorID = floatingAnchorID
+        self.resources = resources
+        self.appleSync = appleSync
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -340,6 +364,8 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         case isCollapsed
         case style
         case floatingAnchorID
+        case resources
+        case appleSync
     }
 
     init(from decoder: Decoder) throws {
@@ -373,5 +399,7 @@ struct CanvasNode: Identifiable, Equatable, Codable {
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? false
         style = try container.decodeIfPresent(TopicStyle.self, forKey: .style) ?? TopicStyle()
         floatingAnchorID = try container.decodeIfPresent(UUID.self, forKey: .floatingAnchorID)
+        resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        appleSync = try container.decodeIfPresent(AppleSyncState.self, forKey: .appleSync)
     }
 }

@@ -329,6 +329,8 @@ private struct TreeWriter {
         let originalCost = original?["cost"].flatMap(Double.init) ?? 0
         set("cost", node.cost != 0 ? ItmzFormat.formatNumber(node.cost) : nil,
             unchangedIf: original != nil && abs(originalCost - node.cost) < 0.0001)
+        set("resources", node.resources.joined(separator: ", "),
+            unchangedIf: original != nil && IThoughtsImportService.resources(from: original?["resources"]) == node.resources)
         set("cost-type", node.rollupEnabled ? "2" : nil,
             unchangedIf: original != nil && (original?["cost-type"] == "2") == node.rollupEnabled)
 

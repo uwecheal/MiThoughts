@@ -101,3 +101,35 @@ Verified on all 195 sample maps (export, then import, then compare in pre-order)
 | Markdown | 183/195 | titles |
 
 The 12 Markdown cases are limits of Markdown itself: titles containing blank lines or `[1]: url` reference definitions, and a level-2 topic literally named "Relationships".
+
+## Milestone 38B: Task management (iThoughts-style)
+
+Code: `MyThoughts/Views/TaskManagement.swift` and the two-way sync in `Utilities/AppleIntegrationService.swift`.
+
+* **Resources**: each topic has a list of assignees, saved to and read from the iThoughts `resources` attribute (and to OPML/Markdown).
+* **Quick actions**: menu bar **Task**, or right-click a topic ▸ Task. They apply to every selected topic and can be undone.
+
+  | Action | Shortcut |
+  |---|---|
+  | Mark as Done / Not Done | ⌃⌘D |
+  | Progress +25% / −25% | ⌃⌘= / ⌃⌘- |
+  | Priority High / Medium / Low / None | ⌃⌘1 / ⌃⌘2 / ⌃⌘3 / ⌃⌘0 |
+  | Due Today (18:00) | ⌃⌘T |
+  | Show Task List | ⌥⌘T |
+  | Hide/Show Completed Tasks | ⌃⌘H |
+  | Sync with Reminders & Calendar | ⌃⌘S |
+
+  The Due Date submenu also offers Tomorrow, Next Week and Clear Dates, and the Resources submenu assigns names already used in the map.
+* **Canvas badges**: a progress ring, a due date (red when overdue, orange when due today), priority (`!`, `!!`, `!!!`) and `@resources`, shown only on topics that have that data. Completed topics are struck through and dimmed. Each badge can be switched off in the Canvas popover. Settings saved by older versions (which showed "0%" on every topic) are migrated with the badges switched on.
+* **Hide Completed Tasks**: hides a completed task together with its branch, like iThoughts.
+* **Task list** (⌥⌘T or the Tasks button):
+  * Filters: All, Overdue, Today, 7 Days, No Date; by resource or unassigned; show or hide completed.
+  * Sort by due date, priority or map order. Tasks show their path in the map and an overall progress bar.
+  * A checkbox ticks a task done; clicking a row jumps to the topic.
+  * "Add n to Reminders" creates Apple Reminders for the open tasks shown that are not linked yet.
+* **Two-way Reminders/Calendar sync**: a 3-way merge against the values agreed at the last sync, so each side's changes are detected.
+  * When both sides changed a field: Apple wins for completion, dates and priority (usually changed on the iPhone); the map wins for title and notes.
+  * If the Apple item was deleted, the link is removed.
+  * Runs from the menu or task list, and automatically when MyThoughts becomes active (at most once a minute, only if items are linked; switchable).
+
+Verified: 22 logic checks (actions, due status, filters, sorting, settings migration, saving); all 195 sample maps still save byte-identical, and editing resources, priority and progress round-trips through `.itmz` on all of them. In the app: task list, jump to topic, badges and ticking done from the list. Sync was **not** run against the real Reminders/Calendar data.

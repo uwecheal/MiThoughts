@@ -17,6 +17,9 @@ struct InfiniteCanvasView: View {
     @State private var relationshipSourceID: CanvasNode.ID?
     @State private var selectedRelationshipID: CanvasRelationship.ID?
     @State private var editingRelationshipID: CanvasRelationship.ID?
+    @State private var isShowingTaskList = false
+    @State private var isSyncingApple = false
+    @State private var lastAppleSyncAt: Date?
     @State private var derivedData: CanvasDerivedData
     @State private var historyManager = HistoryManager()
     @State private var selectedNodeID: CanvasNode.ID?
@@ -87,7 +90,11 @@ struct InfiniteCanvasView: View {
         _relationships = State(initialValue: document.relationships.filter {
             loadedNodeIDs.contains($0.fromNodeID) && loadedNodeIDs.contains($0.toNodeID)
         })
-        let initialDerivedData = CanvasDerivedData(nodes: loadedNodes, connections: loadedConnections)
+        let initialDerivedData = CanvasDerivedData(
+            nodes: loadedNodes,
+            connections: loadedConnections,
+            hidesCompletedTasks: CanvasAppearance.load().taskDisplay.hideCompletedTasks
+        )
 
         _nodes = State(initialValue: loadedNodes)
         _connections = State(initialValue: loadedConnections)
@@ -153,6 +160,10 @@ struct InfiniteCanvasView: View {
 
                 if isShowingSearchPanel {
                     searchOverlay
+                }
+
+                if isShowingTaskList {
+                    taskListOverlay
                 }
 
                 if isShowingStartScreen {
@@ -304,6 +315,28 @@ struct InfiniteCanvasView: View {
         .zIndex(20)
     }
 
+    private var taskListOverlay: some View {
+        HStack {
+            Spacer()
+            TaskListPanelView(
+                nodes: nodes,
+                isSyncing: isSyncingApple,
+                lastSyncText: lastAppleSyncAt.map { "Last sync " + $0.formatted(date: .omitted, time: .shortened) },
+                onJump: jumpToNode,
+                onToggleDone: { id in applyTaskAction(.toggleDone, to: [id]) },
+                onAddToReminders: addRemindersForTasks,
+                onSync: { syncWithApple(isAutomatic: false) },
+                onClose: { isShowingTaskList = false; focusCanvas() }
+            )
+            .frame(width: 520, height: 560)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            .padding(.trailing, 24)
+        }
+        .zIndex(25)
+    }
+
     private var searchOverlay: some View {
         VStack {
             SearchPanelView(
@@ -437,6 +470,15 @@ struct InfiniteCanvasView: View {
                                 .controlSize(.small)
                             }
 
+                            Button {
+                                isShowingTaskList.toggle()
+                            } label: {
+                                Label("Tasks", systemImage: "checklist")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Task list (⌥⌘T)")
+
                             Button("Canvas") {
                                 isShowingAppearancePopover.toggle()
                                 focusCanvas()
@@ -560,6 +602,24 @@ struct InfiniteCanvasView: View {
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsFileCommand.openURL)) { _ in
                 openPendingExternalFile()
             }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.perform)) { notification in
+                if let action = notification.object as? TaskAction {
+                    applyTaskAction(action, to: selectedNodeIDs.isEmpty ? Set(selectedNodeID.map { [$0] } ?? []) : selectedNodeIDs)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleTaskList)) { _ in
+                isShowingTaskList.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.syncApple)) { _ in
+                syncWithApple(isAutomatic: false)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: TaskCommand.toggleHideCompleted)) { _ in
+                updateAppearance { $0.taskDisplay.hideCompletedTasks.toggle() }
+                refreshDerivedData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                syncWithApple(isAutomatic: true)
+            }
             .onReceive(NotificationCenter.default.publisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
                 addRelationshipFromSelection()
             }
@@ -631,7 +691,8 @@ struct InfiniteCanvasView: View {
         let updatedDerivedData = CanvasDerivedData(
             nodes: nodes,
             connections: connections,
-            focusedNodeID: activeFocusNodeID
+            focusedNodeID: activeFocusNodeID,
+            hidesCompletedTasks: appearance.taskDisplay.hideCompletedTasks
         )
         derivedData = updatedDerivedData
         outlineItems = Self.buildOutlineItems(
@@ -2054,6 +2115,106 @@ struct InfiniteCanvasView: View {
         focusCanvas()
     }
 
+    // MARK: Tasks
+
+    /// All resource names used in the map, for the Task ▸ Resources menu.
+    private var knownResources: [String] {
+        Array(Set(nodes.flatMap(\.resources))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private func applyTaskAction(_ action: TaskAction, to ids: Set<CanvasNode.ID>) {
+        guard !ids.isEmpty else {
+            showStatusMessage("Select a topic first.")
+            return
+        }
+        recordUndoSnapshot()
+        let now = Date()
+        for index in nodes.indices where ids.contains(nodes[index].id) {
+            TaskAction.apply(action, to: &nodes[index], now: now)
+        }
+        saveNodes()
+    }
+
+    private func jumpToNode(_ nodeID: CanvasNode.ID) {
+        guard nodes.contains(where: { $0.id == nodeID }) else {
+            return
+        }
+        if isFocusMode, !isNodeVisibleInFocusMode(nodeID) {
+            exitFocusMode()
+        }
+        if appearance.taskDisplay.hideCompletedTasks,
+           nodes.first(where: { $0.id == nodeID })?.completedAt != nil {
+            updateAppearance { $0.taskDisplay.hideCompletedTasks = false }
+        }
+        expandAncestors(of: nodeID)
+        refreshDerivedData()
+        selectNode(nodeID)
+        centerCanvas(on: nodeID)
+    }
+
+    private func addRemindersForTasks(_ ids: [CanvasNode.ID]) {
+        let targets = nodes.filter { ids.contains($0.id) && $0.appleReminderID == nil }
+        guard !targets.isEmpty, !isSyncingApple else {
+            return
+        }
+        isSyncingApple = true
+        Task { @MainActor in
+            defer { isSyncingApple = false }
+            do {
+                let created = try await AppleIntegrationService.createReminders(for: targets)
+                for index in nodes.indices {
+                    if let reminderID = created[nodes[index].id] {
+                        nodes[index].appleReminderID = reminderID
+                        var syncState = nodes[index].appleSync ?? AppleSyncState()
+                        syncState.reminder = AppleIntegrationService.reminderValues(of: nodes[index])
+                        nodes[index].appleSync = syncState
+                    }
+                }
+                saveNodes()
+                showStatusMessage("Added \(created.count) task(s) to Apple Reminders. Changes made there come back with Sync.")
+            } catch {
+                showStatusMessage(appleReminderErrorMessage(for: error))
+            }
+        }
+    }
+
+    /// Two-way sync with linked Reminders and Calendar events.
+    /// Automatic runs (when the app becomes active) are throttled and quiet unless something changed.
+    private func syncWithApple(isAutomatic: Bool) {
+        guard !isSyncingApple else {
+            return
+        }
+        let hasLinks = nodes.contains { $0.appleReminderID != nil || $0.appleCalendarEventID != nil }
+        if isAutomatic {
+            guard hasLinks, appearance.taskDisplay.autoSyncWithApple else {
+                return
+            }
+            if let lastAppleSyncAt, Date().timeIntervalSince(lastAppleSyncAt) < 60 {
+                return
+            }
+        }
+        isSyncingApple = true
+        let snapshot = nodes
+        Task { @MainActor in
+            let result = await AppleIntegrationService.sync(nodes: snapshot)
+            isSyncingApple = false
+            lastAppleSyncAt = Date()
+            // Only apply if the map was not edited meanwhile (otherwise the next sync merges it).
+            guard nodes == snapshot else {
+                return
+            }
+            let changedMap = result.nodes != snapshot
+            if changedMap {
+                recordUndoSnapshot()
+                nodes = result.nodes
+                saveNodes(markDirty: result.report.pulled > 0 || result.nodes.map(\.appleReminderID) != snapshot.map(\.appleReminderID))
+            }
+            if !isAutomatic || result.report.pulled > 0 || result.report.unlinked > 0 || !result.report.errors.isEmpty {
+                showStatusMessage(result.report.summary)
+            }
+        }
+    }
+
     // MARK: Outline formats (Markdown, OPML, FreeMind)
 
     /// Opens an outline as a new, untitled map (Save asks where to store it).
@@ -2574,6 +2735,9 @@ struct InfiniteCanvasView: View {
 
                 detailsHistoryNodeID = nodeID
                 nodes[currentIndex].appleReminderID = reminderID
+                var syncState = nodes[currentIndex].appleSync ?? AppleSyncState()
+                syncState.reminder = AppleIntegrationService.reminderValues(of: nodes[currentIndex])
+                nodes[currentIndex].appleSync = syncState
                 saveNodes()
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Reminder.")
@@ -2631,6 +2795,7 @@ struct InfiniteCanvasView: View {
 
                 detailsHistoryNodeID = nodeID
                 nodes[currentIndex].appleCalendarEventID = eventID
+                nodes[currentIndex].appleSync?.event = nil
                 saveNodes()
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Calendar Event.")
@@ -4621,6 +4786,43 @@ struct InfiniteCanvasView: View {
                 )
             )
 
+            Toggle(
+                "Resources",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.showResources },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.showResources = newValue
+                        }
+                    }
+                )
+            )
+
+            Toggle(
+                "Hide Completed Tasks",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.hideCompletedTasks },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.hideCompletedTasks = newValue
+                        }
+                        refreshDerivedData()
+                    }
+                )
+            )
+
+            Toggle(
+                "Auto-sync Reminders & Calendar",
+                isOn: Binding(
+                    get: { appearance.taskDisplay.autoSyncWithApple },
+                    set: { newValue in
+                        updateAppearance {
+                            $0.taskDisplay.autoSyncWithApple = newValue
+                        }
+                    }
+                )
+            )
+
             Divider()
 
             Picker(
@@ -4834,8 +5036,13 @@ struct InfiniteCanvasView: View {
                     let label = relationship.label.isEmpty ? "" : " (\(relationship.label))"
                     return RelationshipMenuItem(id: relationship.id, title: "\(arrow) \(relationshipEndTitle(otherID))\(label)")
                 },
+            knownResources: knownResources,
             onStyleAction: { action in
                 applyTopicStyleAction(action, to: wrappedNode.id)
+            },
+            onTaskAction: { action in
+                let targets = selectedNodeIDs.contains(wrappedNode.id) ? selectedNodeIDs : [wrappedNode.id]
+                applyTaskAction(action, to: targets)
             },
             onSelect: {
                 selectedRelationshipID = nil
@@ -5172,7 +5379,7 @@ private struct CanvasDerivedData {
 
     init() { }
 
-    init(nodes: [CanvasNode], connections: [CanvasConnection], focusedNodeID: CanvasNode.ID? = nil) {
+    init(nodes: [CanvasNode], connections: [CanvasConnection], focusedNodeID: CanvasNode.ID? = nil, hidesCompletedTasks: Bool = false) {
         let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         childrenByParent = Dictionary(grouping: nodes.compactMap { node -> CanvasNode? in
             guard node.parentID != nil else {
@@ -5187,7 +5394,8 @@ private struct CanvasDerivedData {
             nodes
                 .filter { node in
                     Self.isVisibleInFocusMode(node, focusedNodeID: focusedNodeID, nodesByID: nodesByID) &&
-                    Self.isVisible(node, nodesByID: nodesByID)
+                    Self.isVisible(node, nodesByID: nodesByID) &&
+                    !(hidesCompletedTasks && Self.isInCompletedBranch(node, nodesByID: nodesByID))
                 }
                 .map(\.id)
         )
@@ -5311,6 +5519,20 @@ private struct CanvasDerivedData {
             currentParentID = nodesByID[parentID]?.parentID
         }
 
+        return false
+    }
+
+    /// A completed task hides with its whole branch (iThoughts "Hide completed tasks").
+    private static func isInCompletedBranch(_ node: CanvasNode, nodesByID: [CanvasNode.ID: CanvasNode]) -> Bool {
+        var current: CanvasNode? = node
+        var visited = Set<CanvasNode.ID>()
+        while let candidate = current, !visited.contains(candidate.id) {
+            if candidate.completedAt != nil {
+                return true
+            }
+            visited.insert(candidate.id)
+            current = candidate.parentID.flatMap { nodesByID[$0] }
+        }
         return false
     }
 
@@ -5510,25 +5732,31 @@ private struct NodeVisualStyle {
 private struct NodeTaskIndicators {
     var showCompletionMarker: Bool
     var completionVisible: Bool
-    var progressText: String?
+    var progress: Int?
     var dueDateText: String?
-    var priorityText: String?
+    var dueStatus: DueStatus
+    var priority: TaskPriority
+    var resources: [String]
 
     var hasDetailRow: Bool {
-        progressText != nil || dueDateText != nil || priorityText != nil
+        progress != nil || dueDateText != nil || priority != .none || !resources.isEmpty
     }
 
+    /// Badges appear only for data the topic actually has.
     init(
         node: CanvasNode,
         displayedProgress: Int,
         settings: TaskDisplaySettings,
         dateFormatter: DateFormatter
     ) {
+        let isDone = node.completedAt != nil || displayedProgress >= 100
         showCompletionMarker = settings.showCompletionMarker
-        completionVisible = settings.showCompletionMarker && displayedProgress >= 100
-        progressText = settings.showProgress ? "\(displayedProgress)%" : nil
-        dueDateText = settings.showDueDate ? Self.compactDueDateText(node.dueDate, formatter: dateFormatter) : nil
-        priorityText = settings.showPriority ? Self.priorityText(node.priority) : nil
+        completionVisible = settings.showCompletionMarker && isDone
+        progress = settings.showProgress && displayedProgress > 0 && !isDone ? displayedProgress : nil
+        dueDateText = settings.showDueDate && !isDone ? Self.compactDueDateText(node.dueDate, formatter: dateFormatter) : nil
+        dueStatus = node.dueStatus()
+        priority = settings.showPriority && !isDone ? node.priority : .none
+        resources = settings.showResources ? node.resources : []
     }
 
     private static func compactDueDateText(_ dueDate: Date?, formatter: DateFormatter) -> String? {
@@ -5541,7 +5769,7 @@ private struct NodeTaskIndicators {
         let dueDay = calendar.startOfDay(for: dueDate)
 
         if dueDay < today {
-            return "Overdue"
+            return "Overdue " + formatter.string(from: dueDate)
         }
 
         if calendar.isDateInToday(dueDate) {
@@ -5553,19 +5781,6 @@ private struct NodeTaskIndicators {
         }
 
         return formatter.string(from: dueDate)
-    }
-
-    private static func priorityText(_ priority: TaskPriority) -> String? {
-        switch priority {
-        case .none:
-            nil
-        case .low:
-            "Low"
-        case .medium:
-            "Med"
-        case .high:
-            "High"
-        }
     }
 }
 
@@ -5583,7 +5798,9 @@ private struct NodeView: View {
     let fillHex: String?
     let isRelationshipSource: Bool
     let relationshipMenuItems: [RelationshipMenuItem]
+    let knownResources: [String]
     let onStyleAction: (TopicStyleAction) -> Void
+    let onTaskAction: (TaskAction) -> Void
     let onSelect: () -> Void
     let onEdit: () -> Void
     let onCommit: () -> Void
@@ -5658,7 +5875,8 @@ private struct NodeView: View {
                         if !node.title.isEmpty || topicImage == nil {
                             Text(TopicText.attributed(node.title))
                                 .font(titleFont)
-                                .foregroundStyle(textColor)
+                                .strikethrough(taskIndicators.completionVisible, color: textColor.opacity(0.5))
+                                .foregroundStyle(textColor.opacity(taskIndicators.completionVisible ? 0.6 : 1))
                                 .multilineTextAlignment(.center)
                                 .lineLimit(maximumTitleLines)
                                 .frame(maxWidth: .infinity)
@@ -5678,22 +5896,15 @@ private struct NodeView: View {
                     }
 
                     if taskIndicators.hasDetailRow {
-                        HStack(spacing: 8 * zoomScale) {
-                            if let progressText = taskIndicators.progressText {
-                                Text(progressText)
-                            }
-
-                            if let dueDateText = taskIndicators.dueDateText {
-                                Text(dueDateText)
-                            }
-
-                            if let priorityText = taskIndicators.priorityText {
-                                Text(priorityText)
-                            }
-                        }
-                        .font(.system(size: 10 * zoomScale, weight: .medium))
-                        .foregroundStyle(textColor.opacity(0.58))
-                        .lineLimit(1)
+                        TaskBadgeRow(
+                            progress: taskIndicators.progress,
+                            dueText: taskIndicators.dueDateText,
+                            dueStatus: taskIndicators.dueStatus,
+                            priority: taskIndicators.priority,
+                            resources: taskIndicators.resources,
+                            scale: zoomScale,
+                            textColor: textColor
+                        )
                     }
                 }
                 .padding(.horizontal, 10 * zoomScale)
@@ -5723,6 +5934,15 @@ private struct NodeView: View {
                             }
                         }
                     }
+                }
+
+                Menu("Task") {
+                    TaskActionMenuItems(
+                        knownResources: knownResources,
+                        assignedResources: node.resources,
+                        isCompleted: node.isTaskCompleted,
+                        perform: onTaskAction
+                    )
                 }
 
                 Menu("Colour") {
@@ -6266,6 +6486,18 @@ private struct NodeDetailsView: View {
                     }
                 }
 
+                TextField("Resources", text: resourcesBinding, prompt: Text("e.g. Anna, Ben"))
+                    .help("People or teams assigned to this task, separated by commas")
+
+                Toggle("Completed", isOn: Binding(
+                    get: { node.isTaskCompleted },
+                    set: { done in
+                        if done != node.isTaskCompleted {
+                            TaskAction.apply(.toggleDone, to: &node)
+                        }
+                    }
+                ))
+
                 if displayedProgress == 100 || node.completedAt != nil {
                     OptionalDateField("Completed At", date: $node.completedAt)
                 }
@@ -6320,6 +6552,12 @@ private struct NodeDetailsView: View {
                 }
             }
 
+            Section {
+                Text("Linked reminders and events sync both ways: ticking a reminder off on your iPhone marks the topic done, and edits here update Apple. Use Tasks ▸ Sync, or keep auto-sync on in Canvas settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Apple Reminder") {
                 if node.appleReminderID == nil {
                     Button("Create Apple Reminder", action: onCreateAppleReminder)
@@ -6369,6 +6607,13 @@ private struct NodeDetailsView: View {
             onEditingBegan()
             onSave()
         }
+    }
+
+    private var resourcesBinding: Binding<String> {
+        Binding(
+            get: { node.resources.joined(separator: ", ") },
+            set: { node.resources = IThoughtsImportService.resources(from: $0) }
+        )
     }
 
     @ViewBuilder
@@ -6591,10 +6836,43 @@ struct NotePanelSettings: Codable, Equatable {
 }
 
 struct TaskDisplaySettings: Codable, Equatable {
+    /// 2 = badges appear only on topics that have the data (so they can be on by default).
+    static let currentVersion = 2
+
     var showCompletionMarker = true
-    var showProgress = false
-    var showDueDate = false
-    var showPriority = false
+    var showProgress = true
+    var showDueDate = true
+    var showPriority = true
+    var showResources = true
+    /// iThoughts "Hide completed tasks".
+    var hideCompletedTasks = false
+    /// Sync linked Reminders/Calendar items when MyThoughts becomes active.
+    var autoSyncWithApple = true
+    var version = TaskDisplaySettings.currentVersion
+
+    init() { }
+
+    private enum CodingKeys: String, CodingKey {
+        case showCompletionMarker, showProgress, showDueDate, showPriority, showResources
+        case hideCompletedTasks, autoSyncWithApple, version
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        showCompletionMarker = try container.decodeIfPresent(Bool.self, forKey: .showCompletionMarker) ?? true
+        if version >= 2 {
+            showProgress = try container.decodeIfPresent(Bool.self, forKey: .showProgress) ?? true
+            showDueDate = try container.decodeIfPresent(Bool.self, forKey: .showDueDate) ?? true
+            showPriority = try container.decodeIfPresent(Bool.self, forKey: .showPriority) ?? true
+        }
+        // Version 1 showed "0%" on every topic, so it was off by default; badges are now
+        // shown only where a task has data, so they start on.
+        showResources = try container.decodeIfPresent(Bool.self, forKey: .showResources) ?? true
+        hideCompletedTasks = try container.decodeIfPresent(Bool.self, forKey: .hideCompletedTasks) ?? false
+        autoSyncWithApple = try container.decodeIfPresent(Bool.self, forKey: .autoSyncWithApple) ?? true
+        self.version = TaskDisplaySettings.currentVersion
+    }
 }
 
 struct CanvasAppearance: Codable, Equatable {

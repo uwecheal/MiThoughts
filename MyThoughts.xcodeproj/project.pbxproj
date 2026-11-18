@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A0002072C17500000000001 /* TaskManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002082C17500000000001 /* TaskManagement.swift */; };
 		1A0002052C17500000000001 /* OutlineFormatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002062C17500000000001 /* OutlineFormatService.swift */; };
 		1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002042C17500000000001 /* TopicStyleRendering.swift */; };
 		1A0002012C17500000000001 /* ItmzExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002022C17500000000001 /* ItmzExportService.swift */; };
@@ -36,6 +37,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1A0002082C17500000000001 /* TaskManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskManagement.swift; sourceTree = "<group>"; };
 		1A0002062C17500000000001 /* OutlineFormatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineFormatService.swift; sourceTree = "<group>"; };
 		1A0002042C17500000000001 /* TopicStyleRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStyleRendering.swift; sourceTree = "<group>"; };
 		1A0002022C17500000000001 /* ItmzExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzExportService.swift; sourceTree = "<group>"; };
@@ -111,6 +113,7 @@
 				1A0000182C17500000000001 /* InfiniteCanvasView.swift */,
 				1A00002A2C17500000000001 /* OutlineView.swift */,
 				1A0002042C17500000000001 /* TopicStyleRendering.swift */,
+				1A0002082C17500000000001 /* TaskManagement.swift */,
 				1A0000322C17500000000001 /* StartScreenView.swift */,
 				1A0000302C17500000000001 /* TemplateChooserView.swift */,
 			);
@@ -241,6 +244,7 @@
 				1A0002052C17500000000001 /* OutlineFormatService.swift in Sources */,
 				1A0000292C17500000000001 /* OutlineView.swift in Sources */,
 				1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */,
+				1A0002072C17500000000001 /* TaskManagement.swift in Sources */,
 				1A00002B2C17500000000001 /* MapLayoutService.swift in Sources */,
 				1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */,
 				1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */,

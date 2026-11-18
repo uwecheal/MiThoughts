@@ -266,6 +266,13 @@ enum IThoughtsImportService {
         }
     }
 
+    /// "Anna, Ben" -> ["Anna", "Ben"].
+    static func resources(from value: String?) -> [String] {
+        (value ?? "").split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     /// "3.00h" -> 3. Negative values mean "not set" in iThoughts.
     static func effort(from value: String?) -> Double {
         guard let value else {
@@ -377,7 +384,8 @@ private struct ImportBuilder {
             parentID: effectiveParentID,
             isCollapsed: attributes["folded"] == "1",
             style: style,
-            floatingAnchorID: isFloating ? parentID : nil
+            floatingAnchorID: isFloating ? parentID : nil,
+            resources: IThoughtsImportService.resources(from: attributes["resources"])
         )
         nodes.append(node)
 

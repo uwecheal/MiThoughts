@@ -49,6 +49,7 @@ struct OutlineTopic {
     var marker: NodeMarker = .none
     var progress = 0
     var isDone = false
+    var resources: [String] = []
     /// Identifier used by relationships inside the file (FreeMind `ID`).
     var sourceID: String?
     var children: [OutlineTopic] = []
@@ -217,6 +218,9 @@ enum OutlineFormatService {
             }
             if node.isCollapsed {
                 attributes.append(("_itmz_folded", "1"))
+            }
+            if !node.resources.isEmpty {
+                attributes.append(("_itmz_resources", node.resources.joined(separator: ", ")))
             }
             if node.completedAt != nil || node.progress > 0 {
                 attributes.append(("_itmz_task_progress", node.completedAt != nil ? "101" : String(node.progress)))
@@ -545,7 +549,8 @@ enum OutlineFormatService {
                 sortIndex: Double(sortIndex),
                 parentID: parentID,
                 isCollapsed: topic.isCollapsed && !topic.children.isEmpty,
-                style: TopicStyle(colorHex: topic.colorHex)
+                style: TopicStyle(colorHex: topic.colorHex),
+                resources: topic.resources
             ))
             if let parentID {
                 connections.append(CanvasConnection(id: UUID(), fromNodeID: parentID, toNodeID: id, type: "parentChild"))
@@ -602,6 +607,9 @@ enum OutlineFormatService {
         }
         if node.effort > 0 {
             bits.append(String(format: "effort %.2fh", node.effort))
+        }
+        if !node.resources.isEmpty {
+            bits.append("@" + node.resources.joined(separator: ", "))
         }
         if node.cost != 0 {
             bits.append("cost " + ItmzFormat.formatNumber(node.cost))
@@ -730,6 +738,7 @@ private final class OPMLParser: NSObject, XMLParserDelegate {
         topic.link = attributes["url"] ?? attributes["htmlUrl"] ?? attributes["xmlUrl"] ?? ""
         topic.colorHex = attributes["_itmz_color"].flatMap { TopicColor.normalizedHex($0) }
         topic.isCollapsed = attributes["_itmz_folded"] == "1"
+        topic.resources = IThoughtsImportService.resources(from: attributes["_itmz_resources"])
         if let icon = attributes["_itmz_icon1"] {
             topic.marker = IThoughtsImportService.marker(forIcon: icon) ?? .none
         }
