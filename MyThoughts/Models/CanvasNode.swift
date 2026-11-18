@@ -194,6 +194,18 @@ struct TopicStyle: Equatable, Codable {
     var imageName: String?
     /// Displayed image width in points (iThoughts `image-width`).
     var imageWidth: Double?
+    /// iThoughts callout (`callout="1"`): a note bubble attached to its parent,
+    /// drawn with a dashed link and not counted as a branch.
+    var isCallout = false
+    /// iThoughts display-only attributes, read on import and never written back
+    /// (the original attributes stay in the file):
+    /// `numbering` format for this topic's descendants (e.g. `^nn^.nn^...^ `),
+    /// sub-map `map-layout` with its `l1-link` / `ln-link` line codes, and `text-color`.
+    var numbering: String?
+    var subLayout: Int?
+    var subLevel1Link: String?
+    var subLevelNLink: String?
+    var textColorHex: String?
 
     init(
         colorHex: String? = nil,
@@ -202,7 +214,13 @@ struct TopicStyle: Equatable, Codable {
         hasBoundary: Bool = false,
         imageData: Data? = nil,
         imageName: String? = nil,
-        imageWidth: Double? = nil
+        imageWidth: Double? = nil,
+        isCallout: Bool = false,
+        numbering: String? = nil,
+        subLayout: Int? = nil,
+        subLevel1Link: String? = nil,
+        subLevelNLink: String? = nil,
+        textColorHex: String? = nil
     ) {
         self.colorHex = colorHex
         self.shape = shape
@@ -211,10 +229,17 @@ struct TopicStyle: Equatable, Codable {
         self.imageData = imageData
         self.imageName = imageName
         self.imageWidth = imageWidth
+        self.isCallout = isCallout
+        self.numbering = numbering
+        self.subLayout = subLayout
+        self.subLevel1Link = subLevel1Link
+        self.subLevelNLink = subLevelNLink
+        self.textColorHex = textColorHex
     }
 
     private enum CodingKeys: String, CodingKey {
-        case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth
+        case colorHex, shape, textSize, hasBoundary, imageData, imageName, imageWidth, isCallout
+        case numbering, subLayout, subLevel1Link, subLevelNLink, textColorHex
     }
 
     init(from decoder: Decoder) throws {
@@ -226,6 +251,12 @@ struct TopicStyle: Equatable, Codable {
         imageData = try container.decodeIfPresent(Data.self, forKey: .imageData)
         imageName = try container.decodeIfPresent(String.self, forKey: .imageName)
         imageWidth = try container.decodeIfPresent(Double.self, forKey: .imageWidth)
+        isCallout = try container.decodeIfPresent(Bool.self, forKey: .isCallout) ?? false
+        numbering = try container.decodeIfPresent(String.self, forKey: .numbering)
+        subLayout = try container.decodeIfPresent(Int.self, forKey: .subLayout)
+        subLevel1Link = try container.decodeIfPresent(String.self, forKey: .subLevel1Link)
+        subLevelNLink = try container.decodeIfPresent(String.self, forKey: .subLevelNLink)
+        textColorHex = try container.decodeIfPresent(String.self, forKey: .textColorHex)
     }
 
     var isDefault: Bool { self == TopicStyle() }

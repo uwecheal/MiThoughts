@@ -170,7 +170,7 @@ private struct MapExportContentView: View {
         ZStack(alignment: .topLeading) {
             payload.appearance.backgroundColor(for: payload.colorScheme)
 
-            if payload.appearance.showGrid {
+            if payload.appearance.showsGrid {
                 ExportGridView(appearance: payload.appearance, bounds: bounds, colors: colors)
             }
 
@@ -360,6 +360,11 @@ private struct ExportQuadrantView: View {
     }
 }
 
+private struct ExportLineKey: Hashable {
+    var colorHex: String?
+    var isLevel1: Bool
+}
+
 private struct ExportConnectionView: View {
     let payload: MapExportPayload
     let bounds: CGRect
@@ -369,8 +374,14 @@ private struct ExportConnectionView: View {
         let nodesByID = Dictionary(payload.nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         Canvas { context, _ in
-            let grouped = Dictionary(grouping: payload.connections) { payload.effectiveColorHexByNodeID[$0.toNodeID] }
-            for (colorHex, connections) in grouped {
+            let grouped = Dictionary(grouping: payload.connections) { connection in
+                ExportLineKey(
+                    colorHex: payload.effectiveColorHexByNodeID[connection.toNodeID],
+                    isLevel1: nodesByID[connection.fromNodeID]?.parentID == nil
+                )
+            }
+            for (key, connections) in grouped {
+                let colorHex = key.colorHex
                 var path = Path()
                 for connection in connections {
                     guard let fromNode = nodesByID[connection.fromNodeID],
@@ -381,7 +392,7 @@ private struct ExportConnectionView: View {
                     ConnectionLinePathBuilder.addConnection(
                         from: localConnectionStart(from: fromNode, to: toNode),
                         to: localConnectionEnd(from: fromNode, to: toNode),
-                        style: payload.appearance.connectionLineStyle,
+                        style: payload.appearance.lineStyle(level1: key.isLevel1),
                         to: &path
                     )
                 }
@@ -389,7 +400,11 @@ private struct ExportConnectionView: View {
                 context.stroke(
                     path,
                     with: .color(TopicColor.color(colorHex) ?? colors.connection),
-                    lineWidth: payload.appearance.connectionLineThickness.width
+                    style: StrokeStyle(
+                        lineWidth: payload.appearance.lineWidth(level1: key.isLevel1),
+                        lineCap: .round,
+                        lineJoin: .round
+                    )
                 )
             }
         }
@@ -438,7 +453,7 @@ private struct ExportSummaryView: View {
                 }
 
                 let summarizedNodes = summary.summarizedNodeIDs.compactMap { nodesByID[$0] }
-                guard summarizedNodes.count >= 2 else {
+                guard !summarizedNodes.isEmpty else {
                     continue
                 }
 
@@ -479,8 +494,12 @@ private struct ExportNodeView: View {
         node.style.shape ?? appearance.nodeStyle.topicShape
     }
 
+    private var outlined: Bool {
+        appearance.activeMapStyle?.drawsOutlinedTopics ?? false
+    }
+
     private var textColor: Color {
-        if let fillHex, shape.isFilled {
+        if let fillHex, shape.isFilled, !outlined {
             return TopicColor.textColor(onFill: fillHex)
         }
         return colors.nodeText
@@ -522,9 +541,11 @@ private struct ExportNodeView: View {
         ZStack {
             TopicBoxBackground(
                 shape: shape,
-                fill: TopicColor.color(fillHex) ?? colors.nodeBackground,
-                stroke: fillHex.map { shape.isFilled ? TopicColor.borderColor(forFill: $0) : (TopicColor.color($0) ?? colors.nodeBorder) } ?? colors.nodeBorder,
-                lineWidth: 1,
+                fill: outlined ? colors.nodeBackground : (TopicColor.color(fillHex) ?? colors.nodeBackground),
+                stroke: fillHex.map {
+                    outlined || !shape.isFilled ? (TopicColor.color($0) ?? colors.nodeBorder) : TopicColor.borderColor(forFill: $0)
+                } ?? colors.nodeBorder,
+                lineWidth: outlined && fillHex != nil ? 1.6 : 1,
                 shadow: showsShadow ? colors.shadow : nil,
                 cornerRadius: cornerRadius
             )

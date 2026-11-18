@@ -5,8 +5,16 @@ enum ConnectionLinePathBuilder {
         from start: CGPoint,
         to end: CGPoint,
         style: CanvasAppearance.ConnectionLineStyle,
+        vertical: Bool = false,
         to path: inout Path
     ) {
+        if vertical {
+            // Same shapes turned 90°: build them in swapped coordinates.
+            var swapped = Path()
+            addConnection(from: CGPoint(x: start.y, y: start.x), to: CGPoint(x: end.y, y: end.x), style: style, to: &swapped)
+            path.addPath(swapped.applying(CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)))
+            return
+        }
         path.move(to: start)
 
         switch style {
@@ -63,10 +71,14 @@ enum ConnectionLinePathBuilder {
         )
     }
 
+    /// Right-angle line whose vertical trunk sits just outside the parent, as in
+    /// iThoughts: siblings then share one trunk however far apart they are.
     private static func addElbowConnection(from start: CGPoint, to end: CGPoint, to path: inout Path) {
-        let midpointX = (start.x + end.x) / 2
-        path.addLine(to: CGPoint(x: midpointX, y: start.y))
-        path.addLine(to: CGPoint(x: midpointX, y: end.y))
+        let dx = end.x - start.x
+        let direction: CGFloat = dx >= 0 ? 1 : -1
+        let trunkX = start.x + direction * min(18, abs(dx) / 2)
+        path.addLine(to: CGPoint(x: trunkX, y: start.y))
+        path.addLine(to: CGPoint(x: trunkX, y: end.y))
         path.addLine(to: end)
     }
 

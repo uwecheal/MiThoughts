@@ -188,20 +188,19 @@ struct TaskActionMenuItems: View {
                 .shortcut(showsShortcuts, "-", [.command, .control])
         }
 
+        // iThoughts: ⌘1 … ⌘5 set priority (1 = highest).
         Menu("Priority") {
             Button("High") { perform(.setPriority(.high)) }
-                .shortcut(showsShortcuts, "1", [.command, .control])
+                .shortcut(showsShortcuts, "1", [.command])
             Button("Medium") { perform(.setPriority(.medium)) }
-                .shortcut(showsShortcuts, "2", [.command, .control])
+                .shortcut(showsShortcuts, "2", [.command])
             Button("Low") { perform(.setPriority(.low)) }
-                .shortcut(showsShortcuts, "3", [.command, .control])
+                .shortcut(showsShortcuts, "3", [.command])
             Button("None") { perform(.setPriority(.none)) }
-                .shortcut(showsShortcuts, "0", [.command, .control])
         }
 
         Menu("Due Date") {
             Button("Today") { perform(.dueToday) }
-                .shortcut(showsShortcuts, "t", [.command, .control])
             Button("Tomorrow") { perform(.dueTomorrow) }
             Button("Next Week") { perform(.dueNextWeek) }
             Divider()

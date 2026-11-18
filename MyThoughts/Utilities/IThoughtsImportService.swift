@@ -64,6 +64,8 @@ struct IThoughtsImportResult {
     var relationshipUUIDs: [UUID: String] = [:]
     /// What was added to iThoughts canvas coordinates to get MyThoughts coordinates.
     var canvasOffset: CGPoint = .zero
+    /// Line shapes, canvas and branch colours from the map's `style.xml`.
+    var mapStyle: MapStyle?
 }
 
 enum IThoughtsImportError: LocalizedError {
@@ -125,7 +127,8 @@ enum IThoughtsImportService {
             report: builder.report,
             topicUUIDs: builder.topicUUIDs,
             relationshipUUIDs: builder.relationshipUUIDs,
-            canvasOffset: builder.canvasOffset
+            canvasOffset: builder.canvasOffset,
+            mapStyle: MapStyle(styleXML: document.file(named: "style.xml"))
         )
     }
 
@@ -359,7 +362,13 @@ private struct ImportBuilder {
             hasBoundary: attributes["boundary"] == "1",
             imageData: imageData,
             imageName: imageName,
-            imageWidth: imageWidth
+            imageWidth: imageWidth,
+            isCallout: attributes["callout"] == "1",
+            numbering: attributes["numbering"].flatMap { $0.isEmpty ? nil : $0 },
+            subLayout: attributes["map-layout"].flatMap(Int.init),
+            subLevel1Link: attributes["l1-link"],
+            subLevelNLink: attributes["ln-link"],
+            textColorHex: attributes["text-color"].flatMap { TopicColor.normalizedHex($0) }
         )
 
         let node = CanvasNode(
@@ -413,7 +422,7 @@ private struct ImportBuilder {
 
     mutating func addRelationships(_ list: [[String: String]]) {
         var usedRelationshipIDs = Set<UUID>()
-        for attributes in list {
+        for (position, attributes) in list.enumerated() {
             guard let from = attributes["end1-uuid"].flatMap({ id(for: $0) }),
                   let to = attributes["end2-uuid"].flatMap({ id(for: $0) }) else {
                 continue
@@ -423,8 +432,9 @@ private struct ImportBuilder {
                 relationshipID = UUID()
             }
             usedRelationshipIDs.insert(relationshipID)
-            if let uuid = attributes["uuid"], !uuid.isEmpty, !relationshipUUIDs.values.contains(uuid) {
-                relationshipUUIDs[relationshipID] = uuid
+            let key = ItmzDocument.relationshipKey(attributes, index: position)
+            if !relationshipUUIDs.values.contains(key) {
+                relationshipUUIDs[relationshipID] = key
             }
             relationships.append(CanvasRelationship(
                 id: relationshipID,
@@ -455,7 +465,7 @@ private struct ImportBuilder {
                     .map { topics[$0] }
                     .filter { $0.uuid.lowercased() != ownKey }
                     .compactMap { id(for: $0.uuid) }
-                if summarized.count >= 2 {
+                if !summarized.isEmpty {
                     summaries.append(CanvasSummary(
                         parentID: parentID,
                         summarizedNodeIDs: summarized,

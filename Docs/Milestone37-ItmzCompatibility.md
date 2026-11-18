@@ -133,3 +133,108 @@ Code: `MyThoughts/Views/TaskManagement.swift` and the two-way sync in `Utilities
   * Runs from the menu or task list, and automatically when MyThoughts becomes active (at most once a minute, only if items are linked; switchable).
 
 Verified: 22 logic checks (actions, due status, filters, sorting, settings migration, saving); all 195 sample maps still save byte-identical, and editing resources, priority and progress round-trips through `.itmz` on all of them. In the app: task list, jump to topic, badges and ticking done from the list. Sync was **not** run against the real Reminders/Calendar data.
+
+## 38C — iThoughts map style, smoother dragging, write-back fixes
+
+**Map style (`style.xml` → `MapStyle`)**: opened `.itmz` maps are now drawn with their own look. Toggle it under Canvas ▸ iThoughts Map Style.
+- **Branch lines.** `level1LinkStyle` / `levelNLinkStyle` map as `2` = right-angle, `3` = curved, `5` = straight; the codes were read off iThoughts' own `preview.png`.
+  - Right-angle lines share one trunk just outside the parent topic.
+  - Main branches are drawn heavier (tapered).
+- **Canvas.** `canvasStyle` maps to the built-in background colours. `-1` uses `<canvas dominantColor>`, and `26` is squared paper. Dark canvases switch the topic and text colours.
+- **Colours.** With `rainbow="1"`, main branches get the start colour's hue turned in equal steps, clockwise. The rest of the colouring:
+  - `level n topicColor` is used for topics that have no colour of their own.
+  - Topics below a main branch inherit its colour (`inheritColor`).
+  - Callouts (`callout="1"`) are not counted as branches, take the start colour and are linked with a dashed line.
+- The style only affects drawing: `style.xml` and topic attributes are never rewritten.
+
+**Dragging**
+- A dragged topic carries its whole branch, as in iThoughts.
+- While dragging, only the moved positions are patched. Visibility, colours, roll-ups and the outline are no longer rebuilt every frame.
+- Topic views are looked up in O(1), and topics off screen are not built at all on maps with more than 60 topics.
+
+**Write-back fixes** (found by an unchanged-save run over additional local test maps, not part of the repository):
+- `floating="1"` on top-level topics is kept.
+- Floating topics go back to their original slot among their siblings.
+- Single-topic summaries (`summary1 == summary2`) are imported and kept.
+- Relationships without a uuid are matched by position, so they keep their `b-offset` and get no new uuid.
+- Groups and relationships that were already dangling in the file are left alone; only references to topics deleted in this save are cleaned up.
+
+**Results**
+- Unchanged save is byte-identical for all sample maps and for the additional local test maps.
+
+**Not supported yet**
+- Maps in the older iThoughts 3 format (`map.itm`, a plist that holds `iThoughtsRelative` XML, with titles stored as archived attributed strings) do not open yet.
+
+## 38D — Several maps open at once (multi-window)
+
+- **Windows.** The app is a `WindowGroup(for: URL.self)`, with one window per map.
+  - Windows can be tabbed: Window ▸ Merge All Windows, or follow the system "Prefer tabs" setting.
+  - The window's URL is kept in sync, so macOS reopens the right files on relaunch.
+- **New window.**
+  - File ▸ New Window (⌘N) opens a new, empty window.
+  - File ▸ New Map in This Window (⌥⌘N) replaces the current map.
+- **Opening files.** File ▸ Open, Open Recent and Finder all go through `MapWindowRegistry.open`:
+  - A file that is already open is brought to the front.
+  - An empty front window opens the file in place.
+  - Otherwise the file gets a new window.
+  - Several files opened from Finder each get their own window. New windows open one at a time, because SwiftUI drops `openWindow` calls made in quick succession.
+- **Commands and keys.** Menu commands are still broadcast as notifications, but each canvas only acts when it is the active map window: the main window, else the last one made main. The keyboard monitor ignores keys aimed at other map windows.
+- **Autosave.** Only the first window opened without a file restores and writes the crash-safe autosave, as before. When it closes, the next new window takes over.
+- **Unsaved changes.** Other windows ask Save / Don't Save / Cancel before closing, using a delegate proxy (`CloseGuard`), and before quitting.
+- **Window title.** It shows the file's proxy icon (`representedURL`), and the edited dot follows `isDirty`.
+- Verified in a separate test build:
+  - Two `.itmz` files opened together from Finder each got their own window.
+  - The Window menu lists every map.
+  - Task ▸ Show Task List reached only the window brought to the front; checked with a temporary routing log, both ways.
+
+## 38E — iThoughts 3 maps, outlined topics, groups, numbering, sub-map lines
+
+- **iThoughts 3 maps (`map.itm`)** — `ItmzLegacy` reads the property list and translates it into current `mapdata.xml` / `style.xml` in memory, after which the normal import is used.
+  - The `MapData` string holds `<iThoughtsRelative>` XML. Attribute names are translated: `txt`→`text`, `x`/`y`→`position`, `topcol`→`color`, `rsrcnm`→`resources`, `complete`→`task-progress`, `start`/`due`, `fnt`→`text-size`, `txtNumber`→`numbering`, `map_layout`/`l1_link`/`ln_link` and others. Relationships translate `end1`/`end2`, styles, `color`, `centretxt` and `Boffset`.
+  - Dates in the `ddMMyy HHmmss` format are converted.
+  - Titles and notes that exist only as `txtPLIST`/`notePLIST` are read straight from the keyed archive. A real unarchive fails on the Mac because of iOS font classes.
+  - `MapStyle` becomes `style.xml`. For the few maps without one, a style is built from the plist keys.
+  - Opened maps are untitled ("<name> — converted from iThoughts 3"). Save writes a new current-format `.itmz`; the original file is never overwritten.
+  - Tested on local iThoughts 3 test maps (not part of the repository): all open, and save then reopen keeps every title, image and relationship. Topics with empty titles are empty in the original too (image-only or blank topics).
+- **Outlined topics.**
+  - On iThoughts' custom dark canvases (`<canvas dark="1">`), topics are drawn as a coloured outline on a dark body, matching iThoughts' renderings. Built-in dark canvases such as `16` keep solid fills.
+  - Canvas ▸ Outlined Topics switches this per map.
+- **Groups** (`<group type color member…>`): drawn as rounded boxes around the members' visible branches. `type 0` is tinted, `type 1` is an outline. Display only; the file keeps them as they are.
+- **Numbering** (`numbering` on a topic): its descendants show 1, 1.1, 1.1.1 … before their titles. Display only.
+- **Sub-map layouts** (`map-layout` with `l1-link`/`ln-link` on a topic):
+  - Lines inside that branch use the sub-map's own shapes.
+  - Top-down (`3`) and vertical (`2`) sub-maps connect bottom to top.
+  - Topic positions come from the file, so the layout itself is kept.
+- **`text-color`**: shown as the topic's text colour.
+- **Reminders sync test.** A one-reminder round trip (create → rename pushes → tick on "phone" pulls → delete unlinks) was written. It could not run from the development shell, because macOS refuses Reminders access to unbundled tools. It still needs a manual check in the app.
+
+## 38F — iThoughtsX keyboard shortcuts, privacy guard
+
+**Shortcuts now match iThoughtsX** (taken from its menu definitions):
+
+| Action | Key |
+|---|---|
+| New map (window) / Open / Save / Print | ⌘N / ⌘O / ⌘S / ⌘P |
+| Outline View | ⇧⌘O |
+| Edit/View Notes · Show/Hide Notes Window | ⌥⌘T · ⇧⌘T |
+| Find · Find (and Replace) | ⌘F · ⌥⌘F |
+| Focus on Selected | ⇧⌘F |
+| Zoom In / Out · Fit Map · Fit Selection | ⌘> / ⌘< · ⌘0 · ⇧⌘0 |
+| Child · Sibling after · Sibling before · Parent | Tab · Return (⌘Return) · ⇧Return · ⇧Tab |
+| Delete | ⌫ / ⌘⌫ |
+| New Relationship | ⌘L |
+| Summary | ⇧⌘G |
+| Priority high / medium / low | ⌘1 / ⌘2 / ⌘3 |
+| Task Panel | ⌃⌥⌘T |
+| Create Reminder · Create Calendar Event | ⇧⌘R · ⌃⌘R |
+| Select All Topics | ⌘A |
+| Text Bigger / Smaller | ⌘+ / ⌘- |
+
+- MyThoughts-only task keys stay: ⌃⌘D done, ⌃⌘= / ⌃⌘- progress, ⌃⌘H hide completed, ⌃⌘S sync.
+- "Due today" lost ⌃⌘T, which iThoughts uses for note editing.
+- Plain digit keys still set the visible depth, but no longer swallow ⌘1 … ⌘0.
+
+**Privacy guard**
+- `.gitignore` excludes map files and exports: `.itmz`, `.itm`, `.mythoughts`, `.mm`, `.opml`, `*.assets/`, `mapdata.xml`, `preview.png`.
+- `.githooks/pre-commit` refuses commits that add such files or local/iCloud paths. Enable it per clone with `git config core.hooksPath .githooks`.
+- Test maps are only ever read from outside the repository.

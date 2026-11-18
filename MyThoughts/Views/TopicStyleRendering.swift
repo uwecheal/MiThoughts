@@ -467,6 +467,59 @@ struct BoundaryRenderItem {
     var color: Color
 }
 
+/// A group box from an iThoughts file: drawn around its member topics' branches.
+struct CanvasGroupBox {
+    var colorHex: String?
+    /// type 0 = tinted box, type 1 = outline only.
+    var isFilled: Bool
+    var memberIDs: [UUID]
+}
+
+struct GroupLayerView: View {
+    var items: [(rect: CGRect, color: Color, isFilled: Bool)]
+    var scale: CGFloat = 1
+
+    var body: some View {
+        Canvas { context, _ in
+            for item in items {
+                let path = Path(roundedRect: item.rect, cornerRadius: 16 * max(scale, 0.5))
+                if item.isFilled {
+                    context.fill(path, with: .color(item.color.opacity(0.16)))
+                }
+                context.stroke(path, with: .color(item.color.opacity(0.8)), lineWidth: 1.5)
+            }
+        }
+    }
+}
+
+/// iThoughts topic numbering (`numbering="^nn^.nn^...^ "`): children of a numbered
+/// topic get 1, 2, … and deeper levels 1.1, 1.1.1, ….
+enum TopicNumbering {
+    static func prefixes(
+        nodes: [CanvasNode],
+        childrenByParent: [UUID: [CanvasNode]]
+    ) -> [UUID: String] {
+        var result: [UUID: String] = [:]
+        for numbered in nodes where numbered.style.numbering != nil {
+            let separator = numbered.style.numbering?.hasSuffix(" ") == false ? "" : " "
+            var stack: [(UUID, [Int])] = [(numbered.id, [])]
+            while let (parentID, path) = stack.popLast() {
+                let children = (childrenByParent[parentID] ?? [])
+                    .filter { $0.floatingAnchorID == nil && !$0.style.isCallout }
+                    .sorted { $0.sortIndex < $1.sortIndex }
+                for (index, child) in children.enumerated() {
+                    let childPath = path + [index + 1]
+                    result[child.id] = childPath.map(String.init).joined(separator: ".") + separator
+                    if child.style.numbering == nil {
+                        stack.append((child.id, childPath))
+                    }
+                }
+            }
+        }
+        return result
+    }
+}
+
 struct BoundaryLayerView: View {
     var items: [BoundaryRenderItem]
     var scale: CGFloat = 1

@@ -77,6 +77,9 @@ final class ItmzDocument {
     private(set) var xml: ItmzXMLDocument
     private(set) var style: ItmzXMLElement?
     var fileURL: URL?
+    /// Read from an iThoughts 3 `map.itm` archive and translated to the current
+    /// format; it must be saved to a new file, never back over the original.
+    private(set) var isLegacyFormat = false
 
     var root: ItmzXMLElement { xml.root }
 
@@ -95,6 +98,18 @@ final class ItmzDocument {
             names.append(entry.name)
             files[entry.name] = entry.data
         }
+        var isLegacy = false
+        if files["mapdata.xml"] == nil, let legacy = files["map.itm"],
+           let converted = try? ItmzLegacy.convert(mapItm: legacy) {
+            // Saved as a current .itmz: mapdata.xml first, style.xml, and the old entry dropped.
+            files["map.itm"] = nil
+            files["mapdata.xml"] = converted.mapData
+            if files["style.xml"] == nil {
+                files["style.xml"] = converted.style
+            }
+            names = ["mapdata.xml", "style.xml"] + names.filter { $0 != "map.itm" && $0 != "mapdata.xml" && $0 != "style.xml" }
+            isLegacy = true
+        }
         guard let mapData = files["mapdata.xml"] else {
             throw ItmzError.missingMapData
         }
@@ -106,6 +121,7 @@ final class ItmzDocument {
         self.files = files
         self.xml = xml
         self.fileURL = fileURL
+        self.isLegacyFormat = isLegacy
         if let styleData = files["style.xml"] {
             style = try? ItmzXMLDocument(data: styleData).root
         }
@@ -347,7 +363,7 @@ final class ItmzDocument {
             element.tail = "\n"
         }
         report.deleted = Set(index.keys).subtracting(seen).count
-        dropDanglingReferences(alive: seen)
+        dropDanglingReferences(deleted: Set(index.keys).subtracting(seen))
         // Only a real change (content, order, structure) touches the map's timestamp and manifest,
         // so "open, don't edit, save" stays byte-identical.
         if xml.data() != bytesBefore {
@@ -362,6 +378,15 @@ final class ItmzDocument {
     /// (such as `b-offset`); new ones are created; missing ones are removed.
     /// Returns true when mapdata.xml changed.
     @discardableResult
+    /// Identity of a `<relationship>`: its uuid, or — for the older lines iThoughts
+    /// wrote without one — a stand-in made from its position among the lines.
+    static func relationshipKey(_ attributes: [String: String], index: Int) -> String {
+        if let uuid = attributes["uuid"], !uuid.isEmpty {
+            return uuid
+        }
+        return "#rel\(index)"
+    }
+
     func applyRelationships(_ relationships: [[String: String]], now: Date = Date()) -> Bool {
         let container: ItmzXMLElement
         if let existing = root.firstChild(named: "relationships") {
@@ -375,10 +400,8 @@ final class ItmzDocument {
         }
 
         var index: [String: ItmzXMLElement] = [:]
-        for element in container.children(named: "relationship") {
-            if let uuid = element["uuid"] {
-                index[uuid] = element
-            }
+        for (position, element) in container.children(named: "relationship").enumerated() {
+            index[Self.relationshipKey(element.attributeDictionary, index: position)] = element
         }
 
         var changed = false
@@ -386,7 +409,7 @@ final class ItmzDocument {
         var seen = Set<String>()
         for attributes in relationships {
             var uuid = attributes["uuid"] ?? ""
-            if uuid.isEmpty {
+            if uuid.isEmpty || (uuid.hasPrefix("#rel") && index[uuid] == nil) {
                 uuid = ItmzFormat.newUUID()
             }
             guard !seen.contains(uuid) else {
@@ -451,13 +474,18 @@ final class ItmzDocument {
         relationships.map(\.attributeDictionary)
     }
 
-    private func dropDanglingReferences(alive: Set<String>) {
-        let aliveLowercased = Set(alive.map { $0.lowercased() })
+    /// Removes references to topics deleted by this apply. References that were
+    /// already dangling in the file are left alone, as iThoughts tolerates them.
+    private func dropDanglingReferences(deleted: Set<String>) {
+        let deletedLowercased = Set(deleted.map { $0.lowercased() })
+        guard !deletedLowercased.isEmpty else {
+            return
+        }
         func isAlive(_ uuid: String?) -> Bool {
             guard let uuid else {
-                return false
+                return true
             }
-            return aliveLowercased.contains(uuid.lowercased())
+            return !deletedLowercased.contains(uuid.lowercased())
         }
 
         if let relationships = root.firstChild(named: "relationships") {
@@ -501,7 +529,7 @@ final class ItmzDocument {
         }
     }
 
-    private static func isMemberAttribute(_ name: String) -> Bool {
+    static func isMemberAttribute(_ name: String) -> Bool {
         name.hasPrefix("member") && !name.dropFirst(6).isEmpty && name.dropFirst(6).allSatisfy(\.isNumber)
     }
 

@@ -15,12 +15,41 @@ enum ExternalOpenQueue {
         defer { pending.removeAll() }
         return pending.last
     }
+
+    /// Every waiting file, in the order they arrived; each opens in its own window.
+    static func takeAll() -> [URL] {
+        defer { pending.removeAll() }
+        var seen = Set<URL>()
+        return pending.filter { seen.insert($0.standardizedFileURL).inserted }
+    }
 }
 
 final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
+    /// Finder double-click, "Open With", drop on the Dock icon: each file gets its
+    /// own window (or comes forward if it is already open).
     func application(_ application: NSApplication, open urls: [URL]) {
-        if let url = urls.last {
-            ExternalOpenQueue.enqueue(url)
+        MainActor.assumeIsolated {
+            for url in urls {
+                if MapWindowRegistry.shared.entries.isEmpty && WindowOpener.action == nil {
+                    // Too early for any window: the first map window picks it up.
+                    ExternalOpenQueue.enqueue(url)
+                } else {
+                    MapWindowRegistry.shared.open(url)
+                }
+            }
+        }
+        // Launched by opening files, SwiftUI shows no window of its own; make sure
+        // queued files still get one.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                MapWindowRegistry.shared.openQueuedFilesIfNoWindow()
+            }
+        }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            MapWindowRegistry.shared.confirmQuit() ? .terminateNow : .terminateCancel
         }
     }
 }
@@ -28,20 +57,41 @@ final class MyThoughtsAppDelegate: NSObject, NSApplicationDelegate {
 @main
 struct MyThoughtsApp: App {
     @NSApplicationDelegateAdaptor(MyThoughtsAppDelegate.self) private var appDelegate
-    @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
 
     var body: some Scene {
-        Window("MyThoughts", id: "main") {
-            ContentView()
+        // One window per map; windows can also be merged into tabs (Window ▸ Merge All Windows).
+        WindowGroup("MyThoughts", id: MapWindowID.map, for: URL.self) { $fileURL in
+            ContentView(fileURL: $fileURL)
                 .frame(minWidth: 720, minHeight: 480)
         }
         .windowStyle(.titleBar)
         .commands {
+            MyThoughtsCommands()
+        }
+    }
+}
+
+enum MapWindowID {
+    static let map = "map"
+}
+
+struct MyThoughtsCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage("OutlineSettings.isVisible") private var isOutlineVisible = false
+
+    var body: some Commands {
+            // Lets the app delegate open windows for Finder files even before any window exists.
+            let _ = MainActor.assumeIsolated { WindowOpener.action = openWindow }
             CommandGroup(replacing: .newItem) {
-                Button("New Map") {
-                    NotificationCenter.default.post(name: MyThoughtsFileCommand.newMap, object: nil)
+                Button("New Window") {
+                    openWindow(id: MapWindowID.map)
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+
+                Button("New Map in This Window") {
+                    NotificationCenter.default.post(name: MyThoughtsFileCommand.newMap, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option])
 
                 Button("New From Template...") {
                     NotificationCenter.default.post(name: MyThoughtsFileCommand.newFromTemplate, object: nil)
@@ -128,11 +178,34 @@ struct MyThoughtsApp: App {
                 .keyboardShortcut("p", modifiers: [.command])
             }
 
-            CommandMenu("View") {
-                Button(isOutlineVisible ? "Hide Outline" : "Show Outline") {
+            // Into the system View menu (a WindowGroup already has one).
+            // Shortcuts follow iThoughtsX.
+            CommandGroup(before: .toolbar) {
+                Button(isOutlineVisible ? "Hide Outline" : "Outline View") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleOutline, object: nil)
                 }
-                .keyboardShortcut("o", modifiers: [.command, .option])
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button("Edit/View Notes") { NotificationCenter.default.post(name: MyThoughtsViewCommand.editNotes, object: nil) }
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                Button("Show/Hide Notes Window") { NotificationCenter.default.post(name: MyThoughtsViewCommand.toggleNotes, object: nil) }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Find…") { NotificationCenter.default.post(name: MyThoughtsViewCommand.find, object: nil) }
+                    .keyboardShortcut("f", modifiers: [.command])
+
+                Menu("Zoom") {
+                    Button("Zoom In") { NotificationCenter.default.post(name: MyThoughtsViewCommand.zoomIn, object: nil) }
+                        .keyboardShortcut(">", modifiers: [.command])
+                    Button("Zoom Out") { NotificationCenter.default.post(name: MyThoughtsViewCommand.zoomOut, object: nil) }
+                        .keyboardShortcut("<", modifiers: [.command])
+                    Button("Fit Map") { NotificationCenter.default.post(name: MyThoughtsViewCommand.fitMap, object: nil) }
+                        .keyboardShortcut("0", modifiers: [.command])
+                    Button("Fit Selection") { NotificationCenter.default.post(name: MyThoughtsViewCommand.fitSelection, object: nil) }
+                        .keyboardShortcut("0", modifiers: [.command, .shift])
+                }
             }
 
             CommandMenu("Task") {
@@ -142,10 +215,17 @@ struct MyThoughtsApp: App {
 
                 Divider()
 
-                Button("Show Task List") {
+                Button("Show Task Panel") {
                     NotificationCenter.default.post(name: TaskCommand.toggleTaskList, object: nil)
                 }
-                .keyboardShortcut("t", modifiers: [.command, .option])
+                .keyboardShortcut("t", modifiers: [.command, .option, .control])
+
+                Divider()
+
+                Button("Create Reminder") { NotificationCenter.default.post(name: MyThoughtsViewCommand.createReminder, object: nil) }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Create Calendar Event") { NotificationCenter.default.post(name: MyThoughtsViewCommand.createEvent, object: nil) }
+                    .keyboardShortcut("r", modifiers: [.command, .control])
 
                 Button("Hide/Show Completed Tasks") {
                     NotificationCenter.default.post(name: TaskCommand.toggleHideCompleted, object: nil)
@@ -162,7 +242,7 @@ struct MyThoughtsApp: App {
                 Button("Relationship") {
                     NotificationCenter.default.post(name: MyThoughtsViewCommand.addRelationship, object: nil)
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .keyboardShortcut("l", modifiers: [.command])
             }
 
             CommandMenu("Branch") {
@@ -197,6 +277,7 @@ struct MyThoughtsApp: App {
                 Button("Create Summary") {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.createSummary)
                 }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
 
                 Divider()
 
@@ -217,6 +298,7 @@ struct MyThoughtsApp: App {
                 Button("Focus on Branch") {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.focus)
                 }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             }
 
             CommandMenu("Arrange") {
@@ -224,6 +306,5 @@ struct MyThoughtsApp: App {
                     NotificationCenter.default.post(name: MyThoughtsBranchCommand.perform, object: BranchOperation.layout)
                 }
             }
-        }
     }
 }
