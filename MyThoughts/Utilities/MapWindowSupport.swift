@@ -91,6 +91,8 @@ final class MapWindowRegistry {
             return
         }
         entry.windowRef.window = window
+        // Needed so moving the mouse brings back a pointer hidden while panning.
+        window.acceptsMouseMovedEvents = true
         if window.isMainWindow || lastActiveID == nil {
             lastActiveID = id
         }
@@ -212,6 +214,55 @@ final class MapWindowRegistry {
             }
         }
         return true
+    }
+}
+
+/// Hides the pointer while the canvas is panned with two fingers or driven by
+/// keys, and shows it again only when the mouse really moves, a button is
+/// pressed or the app goes to the background. `NSCursor.setHiddenUntilMouseMoves`
+/// flickers here, because topics sliding under the pointer trigger cursor updates.
+@MainActor
+enum CanvasPointer {
+    private static var isHidden = false
+    private static var eventMonitor: Any?
+    private static var resignObserver: NSObjectProtocol?
+
+    static func hide() {
+        guard !isHidden else {
+            return
+        }
+        isHidden = true
+        NSCursor.hide()
+        eventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .leftMouseDragged]
+        ) { event in
+            // A trackpad scroll can carry a zero-length move; only real movement shows the pointer.
+            if event.type != .mouseMoved || abs(event.deltaX) + abs(event.deltaY) > 0.5 {
+                MainActor.assumeIsolated { show() }
+            }
+            return event
+        }
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { show() }
+        }
+    }
+
+    static func show() {
+        guard isHidden else {
+            return
+        }
+        isHidden = false
+        NSCursor.unhide()
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+        }
+        eventMonitor = nil
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+        }
+        resignObserver = nil
     }
 }
 

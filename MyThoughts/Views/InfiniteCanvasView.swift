@@ -568,7 +568,7 @@ struct InfiniteCanvasView: View {
                     }
                     // Keyboard work on the canvas hides the pointer until the mouse moves.
                     if event.window === windowRef.window {
-                        NSCursor.setHiddenUntilMouseMoves(true)
+                        CanvasPointer.hide()
                     }
                     return handleKeyEvent(event)
                 }
@@ -1035,7 +1035,7 @@ struct InfiniteCanvasView: View {
         if event.modifierFlags.contains(.command) {
             let delta = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 8
             zoom(by: exp(delta * 0.01))
-            NSCursor.setHiddenUntilMouseMoves(true)
+            CanvasPointer.hide()
             return true
         }
         let dx = precise ? event.scrollingDeltaX : event.scrollingDeltaX * 10
@@ -1046,7 +1046,7 @@ struct InfiniteCanvasView: View {
         panOffset = CGSize(width: panOffset.width + dx, height: panOffset.height + dy)
         dragStartPanOffset = panOffset
         // Two-finger panning doesn't move the pointer, so keep it out of the way.
-        NSCursor.setHiddenUntilMouseMoves(true)
+        CanvasPointer.hide()
         return true
     }
 
