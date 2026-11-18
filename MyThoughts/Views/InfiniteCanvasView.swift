@@ -40,6 +40,10 @@ struct InfiniteCanvasView: View {
     @State private var detailsNodeID: CanvasNode.ID?
     @State private var newNodeIDs: Set<CanvasNode.ID> = []
     @State private var activePanIsAllowed: Bool?
+    /// Drag on empty canvas draws a selection box (iThoughts; three-finger drag on a trackpad).
+    @State private var isMarqueeSelecting = false
+    @State private var marqueeRect: CGRect?
+    @State private var marqueeBaseSelection: Set<CanvasNode.ID> = []
     @State private var isDraggingNode = false
     @State private var draggedNodeID: CanvasNode.ID?
     @State private var dropTargetNodeID: CanvasNode.ID?
@@ -467,6 +471,15 @@ struct InfiniteCanvasView: View {
                     }
                 }
 
+                if let marqueeRect {
+                    Rectangle()
+                        .fill(Color.accentColor.opacity(0.10))
+                        .overlay(Rectangle().stroke(Color.accentColor.opacity(0.8), lineWidth: 1))
+                        .frame(width: marqueeRect.width, height: marqueeRect.height)
+                        .position(x: marqueeRect.midX, y: marqueeRect.midY)
+                        .allowsHitTesting(false)
+                }
+
                 if relationshipSourceID != nil {
                     relationshipModeIndicator
                         .padding(12)
@@ -544,6 +557,11 @@ struct InfiniteCanvasView: View {
                     }
                     return handleKeyEvent(event)
                 }
+                .background(
+                    KeyboardEventMonitor(eventMask: .scrollWheel) { event in
+                        handleScrollEvent(event)
+                    }
+                )
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -899,14 +917,28 @@ struct InfiniteCanvasView: View {
         )
     }
 
+    /// Drag on empty canvas: a selection box, like iThoughts (⌘ or ⇧ adds to the
+    /// selection). ⌥-drag pans; two-finger scrolling also pans (see `handleScrollEvent`).
     private var panGesture: some Gesture {
         DragGesture(coordinateSpace: .named("canvasScreen"))
             .onChanged { value in
                 if activePanIsAllowed == nil {
-                    activePanIsAllowed = !isDraggingNode && node(at: screenToCanvasPosition(value.startLocation)) == nil
-                    if activePanIsAllowed == true {
+                    let startsOnEmptyCanvas = !isDraggingNode && node(at: screenToCanvasPosition(value.startLocation)) == nil
+                    let flags = NSApp.currentEvent?.modifierFlags ?? []
+                    if startsOnEmptyCanvas && !flags.contains(.option) && relationshipSourceID == nil {
+                        isMarqueeSelecting = true
+                        marqueeBaseSelection = flags.contains(.command) || flags.contains(.shift) ? selectedNodeIDs : []
+                        editingNodeID = nil
+                    }
+                    activePanIsAllowed = startsOnEmptyCanvas && !isMarqueeSelecting
+                    if startsOnEmptyCanvas {
                         dropTargetNodeID = nil
                     }
+                }
+
+                if isMarqueeSelecting {
+                    updateMarquee(from: value.startLocation, to: value.location)
+                    return
                 }
 
                 guard activePanIsAllowed == true else {
@@ -921,7 +953,67 @@ struct InfiniteCanvasView: View {
             .onEnded { _ in
                 dragStartPanOffset = panOffset
                 activePanIsAllowed = nil
+                if isMarqueeSelecting {
+                    isMarqueeSelecting = false
+                    marqueeRect = nil
+                    focusCanvas()
+                }
             }
+    }
+
+    private func updateMarquee(from start: CGPoint, to end: CGPoint) {
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        marqueeRect = rect
+        var selection = marqueeBaseSelection
+        for node in derivedData.visibleNodes {
+            let origin = canvasToScreenPosition(CGPoint(x: node.x, y: node.y))
+            let nodeRect = CGRect(x: origin.x, y: origin.y, width: node.width * zoomScale, height: node.height * zoomScale)
+            if rect.intersects(nodeRect) {
+                selection.insert(node.id)
+            }
+        }
+        selectedNodeIDs = selection
+        if let primary = selectedNodeID, selection.contains(primary) {
+            return
+        }
+        selectedNodeID = derivedData.visibleNodes.first { selection.contains($0.id) }?.id
+        noteHistoryNodeID = nil
+    }
+
+    /// Two-finger scroll pans the canvas; ⌘-scroll zooms. Scrolling over lists,
+    /// notes and other scrollable panels is left to them.
+    private func handleScrollEvent(_ event: NSEvent) -> Bool {
+        guard let window = windowRef.window, event.window === window,
+              let contentView = window.contentView else {
+            return false
+        }
+        let point = contentView.superview?.convert(event.locationInWindow, from: nil) ?? event.locationInWindow
+        var view = contentView.hitTest(point)
+        while let current = view {
+            if current is NSScrollView || current is NSTextView {
+                return false
+            }
+            view = current.superview
+        }
+        let precise = event.hasPreciseScrollingDeltas
+        if event.modifierFlags.contains(.command) {
+            let delta = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 8
+            zoom(by: exp(delta * 0.01))
+            return true
+        }
+        let dx = precise ? event.scrollingDeltaX : event.scrollingDeltaX * 10
+        let dy = precise ? event.scrollingDeltaY : event.scrollingDeltaY * 10
+        guard dx != 0 || dy != 0 else {
+            return false
+        }
+        panOffset = CGSize(width: panOffset.width + dx, height: panOffset.height + dy)
+        dragStartPanOffset = panOffset
+        return true
     }
 
     private var zoomGesture: some Gesture {
@@ -2055,7 +2147,8 @@ struct InfiniteCanvasView: View {
             id: windowID,
             windowRef: windowRef,
             ownsAutosave: ownsAutosave,
-            fileURL: { currentFileURL },
+            // The file this window shows, or is about to load (restored windows).
+            fileURL: { currentFileURL ?? windowFileURL },
             isDirty: { isDirty },
             isBlank: { nodes.isEmpty || (isShowingStartScreen && !isDirty && currentFileURL != nil) },
             openHere: { url in openMyThoughtsFile(at: url) },
@@ -5449,7 +5542,9 @@ struct InfiniteCanvasView: View {
                     }
                     return
                 }
-                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                // iThoughts: ⌘-click (or ⇧-click) adds or removes a topic from the selection.
+                let flags = NSApp.currentEvent?.modifierFlags ?? []
+                if flags.contains(.command) || flags.contains(.shift) {
                     toggleNodeSelection(wrappedNode.id)
                 } else {
                     selectSingleNode(wrappedNode.id)
@@ -7923,10 +8018,12 @@ struct CanvasThemeColors {
 }
 
 private struct KeyboardEventMonitor: NSViewRepresentable {
+    /// Key presses by default; also used for scroll-wheel events.
+    var eventMask: NSEvent.EventTypeMask = .keyDown
     var onKeyDown: (NSEvent) -> Bool
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onKeyDown: onKeyDown)
+        Coordinator(eventMask: eventMask, onKeyDown: onKeyDown)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -7944,9 +8041,11 @@ private struct KeyboardEventMonitor: NSViewRepresentable {
 
     final class Coordinator {
         var onKeyDown: (NSEvent) -> Bool
+        private let eventMask: NSEvent.EventTypeMask
         private var monitor: Any?
 
-        init(onKeyDown: @escaping (NSEvent) -> Bool) {
+        init(eventMask: NSEvent.EventTypeMask, onKeyDown: @escaping (NSEvent) -> Bool) {
+            self.eventMask = eventMask
             self.onKeyDown = onKeyDown
         }
 
@@ -7959,7 +8058,7 @@ private struct KeyboardEventMonitor: NSViewRepresentable {
                 return
             }
 
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
                 guard let self else {
                     return event
                 }

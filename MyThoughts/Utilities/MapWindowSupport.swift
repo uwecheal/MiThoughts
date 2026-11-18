@@ -176,7 +176,12 @@ final class MapWindowRegistry {
         // A short pause also keeps the first request clear of SwiftUI's own launch work.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             MainActor.assumeIsolated {
-                openWindow(value: url)
+                // A restored window may have taken this file in the meantime.
+                if let existing = self.entries.first(where: { $0.fileURL()?.standardizedFileURL == url.standardizedFileURL }) {
+                    existing.windowRef.window?.makeKeyAndOrderFront(nil)
+                } else {
+                    openWindow(value: url)
+                }
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
