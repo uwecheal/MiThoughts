@@ -584,6 +584,9 @@ struct InfiniteCanvasView: View {
             .focused($isCanvasFocused)
             .background(
                 WindowAccessor { window in
+                    // Keep the window even if it arrives before the canvas has registered
+                    // (happens for the first window at launch); registerWindow attaches it then.
+                    windowRef.window = window
                     MapWindowRegistry.shared.attach(window, to: windowID)
                     updateWindowTitle()
                 }
@@ -2188,6 +2191,10 @@ struct InfiniteCanvasView: View {
             openHere: { url in openMyThoughtsFile(at: url) },
             confirmClose: { confirmUnsavedChangesIfNeeded() }
         ))
+        if let window = windowRef.window {
+            MapWindowRegistry.shared.attach(window, to: windowID)
+            updateWindowTitle()
+        }
     }
 
     /// Menu commands are broadcast; only the front map window acts on them.
@@ -4957,9 +4964,28 @@ struct InfiniteCanvasView: View {
             return false
         }
 
-        if editingNodeID != nil {
+        if let editingID = editingNodeID {
             if event.keyCode == KeyCode.escape {
                 cancelEditing()
+                return true
+            }
+
+            // iThoughts: Tab while typing a title finishes it and starts a child (⇧Tab a parent).
+            // Leave Tab to the input method while it is still composing (e.g. pinyin).
+            if event.keyCode == KeyCode.tab,
+               event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+               !((event.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false) {
+                commitEditing(for: editingID)
+                guard nodes.contains(where: { $0.id == editingID }) else {
+                    return true
+                }
+                selectedNodeID = editingID
+                selectedNodeIDs = [editingID]
+                if event.modifierFlags.contains(.shift) {
+                    insertParentForSelectedNode()
+                } else {
+                    createChildForSelectedNode()
+                }
                 return true
             }
 
@@ -7011,7 +7037,7 @@ private struct NodeView: View {
                     onDragStart()
                 }
 
-                guard let originalCanvasPosition else {
+                guard originalCanvasPosition != nil else {
                     return
                 }
 

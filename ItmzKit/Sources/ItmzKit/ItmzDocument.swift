@@ -387,6 +387,7 @@ final class ItmzDocument {
         return "#rel\(index)"
     }
 
+    @discardableResult
     func applyRelationships(_ relationships: [[String: String]], now: Date = Date()) -> Bool {
         let container: ItmzXMLElement
         if let existing = root.firstChild(named: "relationships") {
