@@ -59,7 +59,7 @@ final class ItmzDocument {
     /// Attributes an editor may change. Everything else is read-only.
     static let managedAttributes = ["text", "note", "link", "color", "icon1", "icon2", "folded", "position"]
 
-    /// The wider set a full editor (MyThoughts) manages: style, task, image and summary fields.
+    /// The wider set a full editor (MiThoughts) manages: style, task, image and summary fields.
     /// Callers must pass the original value for every key they did not change, or it is removed.
     static let extendedManagedAttributes = managedAttributes + [
         "shape", "text-size", "boundary", "floating",
@@ -148,8 +148,8 @@ final class ItmzDocument {
             .init(name: "app", value: "com.toketaware.ithoughtsx"),
             .init(name: "app-version", value: "9.4"),
             .init(name: "modified", value: stamp),
-            .init(name: "author", value: "MyThoughts"),
-            .init(name: "system-version", value: "MyThoughts")
+            .init(name: "author", value: "MiThoughts"),
+            .init(name: "system-version", value: "MiThoughts")
         ], children: [topics, relationships])
 
         let preferences = (try? PropertyListSerialization.data(

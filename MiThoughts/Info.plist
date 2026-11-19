@@ -6,14 +6,14 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>MyThoughts Map</string>
+			<string>MiThoughts Map</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.example.MyThoughts.map</string>
+				<string>com.uwecheal.mythoughts.map</string>
 			</array>
 		</dict>
 		<dict>
@@ -33,9 +33,9 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.MyThoughts.map</string>
+			<string>com.uwecheal.mythoughts.map</string>
 			<key>UTTypeDescription</key>
-			<string>MyThoughts Map</string>
+			<string>MiThoughts Map</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.json</string>
@@ -70,5 +70,9 @@
 			</dict>
 		</dict>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 MiThoughts</string>
 </dict>
 </plist>

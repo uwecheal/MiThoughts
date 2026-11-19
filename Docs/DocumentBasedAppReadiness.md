@@ -1,22 +1,22 @@
-# MyThoughts Document-Based App Readiness Review
+# MiThoughts Document-Based App Readiness Review
 
 Milestone 36A is a review-only milestone. This report audits the current lightweight file management system and evaluates readiness for a future macOS `DocumentGroup` conversion. No app behavior should be changed as part of this milestone.
 
 ## Current Architecture Summary
 
-MyThoughts is currently a single-window SwiftUI app with document-like behavior managed manually inside `InfiniteCanvasView`.
+MiThoughts is currently a single-window SwiftUI app with document-like behavior managed manually inside `InfiniteCanvasView`.
 
 The current persistence and file system are split across three layers:
 
 | Layer | Current implementation | Purpose |
 | --- | --- | --- |
-| Local autosave | `NodeStore` writes `Application Support/MyThoughts/nodes.json` | Restores the last working map between launches |
-| Explicit `.mythoughts` files | `MyThoughtsDocumentService` encodes/decodes `MyThoughtsDocument` | Save, Save As, Open, full-map export/import, branch export/import |
+| Local autosave | `NodeStore` writes `Application Support/MiThoughts/nodes.json` | Restores the last working map between launches |
+| Explicit `.mythoughts` files | `MiThoughtsDocumentService` encodes/decodes `MiThoughtsDocument` | Save, Save As, Open, full-map export/import, branch export/import |
 | UserDefaults settings | `CanvasAppearance`, `NotePanelSettings`, `OutlineSettings`, `RecentFilesStore` | Appearance defaults, note panel state, outline visibility, recent files |
 
 The app already has a stable document payload model:
 
-- `MyThoughtsDocument`
+- `MiThoughtsDocument`
 - `formatVersion`
 - `documentType`
 - `nodes`
@@ -45,7 +45,7 @@ This means local autosave is used for nearly every map mutation, independent of 
 
 `saveCurrentFile()` writes to `currentFileURL` if one exists. If no file URL exists, it falls back to `saveCurrentFileAs()`.
 
-`saveCurrentMap(to:shouldUpdateCurrentFile:)` validates the map, exports a full `MyThoughtsDocument`, updates `currentFileURL`, adds the file to `RecentFilesStore`, clears `isDirty`, sets `lastSavedAt`, and updates the window title.
+`saveCurrentMap(to:shouldUpdateCurrentFile:)` validates the map, exports a full `MiThoughtsDocument`, updates `currentFileURL`, adds the file to `RecentFilesStore`, clears `isDirty`, sets `lastSavedAt`, and updates the window title.
 
 ### Save As
 
@@ -53,7 +53,7 @@ This means local autosave is used for nearly every map mutation, independent of 
 
 ### Open
 
-`openMyThoughtsFile()` asks about unsaved changes, presents `NSOpenPanel`, imports a `.mythoughts` file, rejects branch documents for Open, then calls `applyOpenedDocument`.
+`openMiThoughtsFile()` asks about unsaved changes, presents `NSOpenPanel`, imports a `.mythoughts` file, rejects branch documents for Open, then calls `applyOpenedDocument`.
 
 `applyOpenedDocument` repairs the imported map, replaces in-memory nodes and connections, applies document canvas/note-panel settings, clears transient UI state, selects a root node, centers it, sets `currentFileURL`, updates recent files, clears dirty state, writes local autosave, saves UserDefaults settings, and hides the Start Screen.
 
@@ -79,13 +79,13 @@ The Start Screen reuses existing commands:
 
 - New Blank Map -> `newMap()`
 - New From Template -> `showTemplateChooser()`
-- Open Existing Map -> `openMyThoughtsFile()`
+- Open Existing Map -> `openMiThoughtsFile()`
 - Recent Files -> `openRecentFile(_:)`
 - Continue Last Working Map -> hide Start Screen
 
 ### Import `.mythoughts`
 
-`importMyThoughtsFile()` is separate from Open.
+`importMiThoughtsFile()` is separate from Open.
 
 - If the document is `.branch`, it imports into the current map using branch paste/remap logic.
 - If the document is `.fullMap`, it asks for confirmation and then `applyPendingImport()` replaces the current map.
@@ -100,7 +100,7 @@ This is a conversion/import operation, not an Open operation.
 
 ### Export `.mythoughts`
 
-`exportMyThoughtsFile()` writes the current full map to a chosen `.mythoughts` file but does not update `currentFileURL` or clear dirty state. This is correctly treated as export, not save.
+`exportMiThoughtsFile()` writes the current full map to a chosen `.mythoughts` file but does not update `currentFileURL` or clear dirty state. This is correctly treated as export, not save.
 
 ### Export Selected Branch
 
@@ -216,7 +216,7 @@ The best next step is to clean document ownership boundaries first, without chan
 
 ### 36B: Clean Document Model
 
-Create a focused model such as `MyThoughtsMapDocumentData` or refine `MyThoughtsDocument` so all real document fields are clearly owned by one type:
+Create a focused model such as `MiThoughtsMapDocumentData` or refine `MiThoughtsDocument` so all real document fields are clearly owned by one type:
 
 - nodes
 - connections
@@ -292,34 +292,34 @@ Only after `DocumentGroup` is stable, consider multiple open maps. This requires
 
 | File | Relevance |
 | --- | --- |
-| `MyThoughts/Views/InfiniteCanvasView.swift` | Owns most document state, autosave, file commands, import/export, Start Screen, undo, and UI state |
-| `MyThoughts/Utilities/NodeStore.swift` | Defines `.mythoughts` document model/service, autosave store, recent files, file commands |
-| `MyThoughts/MyThoughtsApp.swift` | Defines current app scene and menu commands |
-| `MyThoughts/Utilities/HistoryManager.swift` | Owns snapshot undo/redo model |
-| `MyThoughts/Utilities/MapValidator.swift` | Validates and repairs document structure |
-| `MyThoughts/Utilities/IThoughtsImportService.swift` | Converts external iThoughts files into map data |
-| `MyThoughts/Utilities/MapExportRenderer.swift` | Handles PDF/PNG/print rendering without mutating document data |
-| `MyThoughts/Utilities/BuiltInTemplateFactory.swift` | Generates new maps from templates |
-| `MyThoughts/Views/StartScreenView.swift` | Provides lightweight launcher UI using existing file commands |
-| `MyThoughts/Views/TemplateChooserView.swift` | Creates template maps through existing template flow |
-| `MyThoughts/Models/CanvasNode.swift` | Primary document data model |
-| `MyThoughts/Models/CanvasConnection.swift` | Connection document data model |
+| `MiThoughts/Views/InfiniteCanvasView.swift` | Owns most document state, autosave, file commands, import/export, Start Screen, undo, and UI state |
+| `MiThoughts/Utilities/NodeStore.swift` | Defines `.mythoughts` document model/service, autosave store, recent files, file commands |
+| `MiThoughts/MiThoughtsApp.swift` | Defines current app scene and menu commands |
+| `MiThoughts/Utilities/HistoryManager.swift` | Owns snapshot undo/redo model |
+| `MiThoughts/Utilities/MapValidator.swift` | Validates and repairs document structure |
+| `MiThoughts/Utilities/IThoughtsImportService.swift` | Converts external iThoughts files into map data |
+| `MiThoughts/Utilities/MapExportRenderer.swift` | Handles PDF/PNG/print rendering without mutating document data |
+| `MiThoughts/Utilities/BuiltInTemplateFactory.swift` | Generates new maps from templates |
+| `MiThoughts/Views/StartScreenView.swift` | Provides lightweight launcher UI using existing file commands |
+| `MiThoughts/Views/TemplateChooserView.swift` | Creates template maps through existing template flow |
+| `MiThoughts/Models/CanvasNode.swift` | Primary document data model |
+| `MiThoughts/Models/CanvasConnection.swift` | Connection document data model |
 
 ## Files Likely Affected In A Future Conversion
 
-- `MyThoughts/MyThoughtsApp.swift`
-- `MyThoughts/Views/InfiniteCanvasView.swift`
-- `MyThoughts/Utilities/NodeStore.swift`
-- `MyThoughts/Utilities/HistoryManager.swift`
-- `MyThoughts/Utilities/MapValidator.swift`
-- `MyThoughts/Views/StartScreenView.swift`
-- `MyThoughts/Views/TemplateChooserView.swift`
-- `MyThoughts/Utilities/BuiltInTemplateFactory.swift`
-- `MyThoughts/Models/CanvasNode.swift`
-- `MyThoughts/Models/CanvasConnection.swift`
+- `MiThoughts/MiThoughtsApp.swift`
+- `MiThoughts/Views/InfiniteCanvasView.swift`
+- `MiThoughts/Utilities/NodeStore.swift`
+- `MiThoughts/Utilities/HistoryManager.swift`
+- `MiThoughts/Utilities/MapValidator.swift`
+- `MiThoughts/Views/StartScreenView.swift`
+- `MiThoughts/Views/TemplateChooserView.swift`
+- `MiThoughts/Utilities/BuiltInTemplateFactory.swift`
+- `MiThoughts/Models/CanvasNode.swift`
+- `MiThoughts/Models/CanvasConnection.swift`
 
 ## Final Assessment
 
-MyThoughts is document-ready at the data-format level, but not yet document-ready at the app-architecture level.
+MiThoughts is document-ready at the data-format level, but not yet document-ready at the app-architecture level.
 
 The safest path is to keep the current lightweight file system for now and do a staged cleanup before any `DocumentGroup` conversion. The next best milestone is 36B: clean and centralize the document model while preserving all current behavior.

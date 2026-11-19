@@ -2,14 +2,14 @@ import CoreGraphics
 import Foundation
 
 /// An .itmz file opened for editing. Saving writes the edited map back into the
-/// *same* XML DOM, so everything MyThoughts does not model (style.xml, groups,
+/// *same* XML DOM, so everything MiThoughts does not model (style.xml, groups,
 /// callouts, note attachments, preview.png, unknown attributes ...) is kept.
 final class ItmzEditingSession {
     let document: ItmzDocument
     /// Node id -> iThoughts topic uuid string, exactly as it appears in the file.
     var topicUUIDs: [UUID: String]
     var relationshipUUIDs: [UUID: String]
-    /// MyThoughts canvas coordinates = iThoughts coordinates + offset.
+    /// MiThoughts canvas coordinates = iThoughts coordinates + offset.
     var canvasOffset: CGPoint
 
     /// iThoughts groups (`<group type color member0…>`), mapped to node ids once; drawn as boxes.
@@ -76,7 +76,7 @@ enum ItmzExportService {
     /// Where overwritten .itmz files are copied before saving.
     static var backupDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("MyThoughts", isDirectory: true)
+            .appendingPathComponent("MyThoughts", isDirectory: true) // earlier app name, kept so saved data is found
             .appendingPathComponent("iThoughts Backups", isDirectory: true)
     }
 

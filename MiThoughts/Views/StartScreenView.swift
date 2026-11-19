@@ -26,7 +26,7 @@ struct StartScreenView: View {
             HStack(spacing: 36) {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("MyThoughts")
+                        Text("MiThoughts")
                             .font(.system(size: 34, weight: .semibold))
 
                         Text("Choose how you want to start.")

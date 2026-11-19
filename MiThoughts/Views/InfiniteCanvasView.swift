@@ -52,7 +52,7 @@ struct InfiniteCanvasView: View {
     @State private var outlineSettings: OutlineSettings
     @State private var outlineItems: [OutlineItem]
     @State private var isShowingAppearancePopover = false
-    @State private var pendingImportDocument: MyThoughtsDocument?
+    @State private var pendingImportDocument: MiThoughtsDocument?
     @State private var isShowingImportConfirmation = false
     @State private var pendingIThoughtsImportResult: IThoughtsImportResult?
     @State private var isShowingIThoughtsImportConfirmation = false
@@ -104,7 +104,7 @@ struct InfiniteCanvasView: View {
         // Only unsaved work comes back; otherwise the window opens on the start screen
         // instead of whatever map was last on the canvas.
         let recovers = owns && AutosaveInfo.hasUnsavedChanges
-        let document = recovers ? NodeStore.loadDocument() : MyThoughtsDocumentData(nodes: [], connections: [])
+        let document = recovers ? NodeStore.loadDocument() : MiThoughtsDocumentData(nodes: [], connections: [])
         _isDirty = State(initialValue: recovers && !document.nodes.isEmpty)
         _recoveredSourceName = State(initialValue: recovers && !document.nodes.isEmpty
             ? (AutosaveInfo.sourceFileName ?? "an untitled map") : nil)
@@ -231,7 +231,7 @@ struct InfiniteCanvasView: View {
                     applyPendingIThoughtsImport()
                 }
             }
-            .alert("MyThoughts", isPresented: $isShowingStatusMessage) {
+            .alert("MiThoughts", isPresented: $isShowingStatusMessage) {
                 Button("OK") { }
             } message: {
                 Text(statusMessage)
@@ -261,7 +261,7 @@ struct InfiniteCanvasView: View {
                     pendingCalendarCreationAllowsDuplicate = false
                 }
             } message: {
-                Text("MyThoughts will create a one-way Apple Calendar event from this topic.")
+                Text("MiThoughts will create a one-way Apple Calendar event from this topic.")
             }
             .sheet(isPresented: Binding(
                 get: { editingRelationshipID != nil },
@@ -406,7 +406,7 @@ struct InfiniteCanvasView: View {
                 _ = newMap()
             },
             onNewFromTemplate: showTemplateChooser,
-            onOpenExistingMap: openMyThoughtsFile,
+            onOpenExistingMap: openMiThoughtsFile,
             onOpenRecentFile: openRecentFile,
             onChooseTemplate: applyTemplate
         )
@@ -614,7 +614,7 @@ struct InfiniteCanvasView: View {
                             windowRef.window?.close()
                             return
                         }
-                        openMyThoughtsFile(at: url)
+                        openMiThoughtsFile(at: url)
                     }
                     openPendingExternalFile()
                 }
@@ -664,53 +664,53 @@ struct InfiniteCanvasView: View {
             .onChange(of: isShowingStartScreen) { _, _ in
                 updateWindowTitle()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.newMap)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.newMap)) { _ in
                 _ = newMap()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.newFromTemplate)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.newFromTemplate)) { _ in
                 showTemplateChooser()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.showStartScreen)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.showStartScreen)) { _ in
                 showStartScreen()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.open)) { _ in
-                openMyThoughtsFile()
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.open)) { _ in
+                openMiThoughtsFile()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.openRecent)) { notification in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.openRecent)) { notification in
                 if let url = notification.object as? URL {
                     openRecentFile(url)
                 }
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.save)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.save)) { _ in
                 _ = saveCurrentFile()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.saveAs)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.saveAs)) { _ in
                 _ = saveCurrentFileAs()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportPDF)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.exportPDF)) { _ in
                 exportMapAsPDF()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportPNG)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.exportPNG)) { _ in
                 exportMapAsPNG()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.printMap)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.printMap)) { _ in
                 printMap()
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.toggleOutline)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.toggleOutline)) { _ in
                 toggleOutlineView()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportITMZ)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.exportITMZ)) { _ in
                 exportITMZFile()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.exportOutline)) { notification in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.exportOutline)) { notification in
                 if let raw = notification.object as? String, let format = OutlineFormat(rawValue: raw) {
                     exportOutlineFile(format)
                 }
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.importITMZ)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.importITMZ)) { _ in
                 importIThoughtsFile()
             }
-            .onReceive(commandPublisher(for: MyThoughtsFileCommand.openURL)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsFileCommand.openURL)) { _ in
                 openPendingExternalFile()
             }
             .onReceive(commandPublisher(for: TaskCommand.perform)) { notification in
@@ -731,35 +731,35 @@ struct InfiniteCanvasView: View {
             .onReceive(commandPublisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 syncWithApple(isAutomatic: true)
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.toggleNotes)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.toggleNotes)) { _ in
                 notePanelSettings.isVisible.toggle()
                 saveNotePanelSettings()
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.editNotes)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.editNotes)) { _ in
                 openNotePanel()
                 DispatchQueue.main.async {
                     isNoteEditorFocused = true
                 }
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.find)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.find)) { _ in
                 openSearchPanel()
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.zoomIn)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.zoomIn)) { _ in
                 zoom(by: 1.25)
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.zoomOut)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.zoomOut)) { _ in
                 zoom(by: 0.8)
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.fitMap)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.fitMap)) { _ in
                 fit(derivedData.visibleNodes)
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.fitSelection)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.fitSelection)) { _ in
                 fit(derivedData.visibleNodes.filter { selectedNodeIDs.contains($0.id) })
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.createReminder)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.createReminder)) { _ in
                 addRemindersForTasks(Array(selectedNodeIDs))
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.createEvent)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.createEvent)) { _ in
                 guard let selectedNodeID else {
                     showStatusMessage("Select a topic first.")
                     return
@@ -768,10 +768,10 @@ struct InfiniteCanvasView: View {
                 pendingCalendarCreationAllowsDuplicate = false
                 isShowingCalendarCreationConfirmation = true
             }
-            .onReceive(commandPublisher(for: MyThoughtsViewCommand.addRelationship)) { _ in
+            .onReceive(commandPublisher(for: MiThoughtsViewCommand.addRelationship)) { _ in
                 addRelationshipFromSelection()
             }
-            .onReceive(commandPublisher(for: MyThoughtsBranchCommand.perform)) { notification in
+            .onReceive(commandPublisher(for: MiThoughtsBranchCommand.perform)) { notification in
                 if let operation = notification.object as? BranchOperation {
                     performBranchOperationOnSelected(operation)
                 }
@@ -1495,7 +1495,7 @@ struct InfiniteCanvasView: View {
     private func validateMapAfterBranchOperation(_ operationName: String) {
         let report = MapValidator.validate(nodes: nodes, connections: connections, summaries: summaries)
         if !report.isValid {
-            print("MyThoughts \(operationName) validation:\n\(report.summary)")
+            print("MiThoughts \(operationName) validation:\n\(report.summary)")
         }
     }
 
@@ -1516,8 +1516,8 @@ struct InfiniteCanvasView: View {
         let isITMZ = isITMZFile(currentFileURL) || (currentFileURL == nil && itmzSession != nil)
         let savePanel = NSSavePanel()
         savePanel.title = "Save Map"
-        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .mythoughts for MyThoughts-only features."
-        let defaultExtension = isITMZ ? ItmzExportService.fileExtension : MyThoughtsDocumentService.fileExtension
+        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .mythoughts for MiThoughts-only features."
+        let defaultExtension = isITMZ ? ItmzExportService.fileExtension : MiThoughtsDocumentService.fileExtension
         savePanel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "\(suggestedMapFileName).\(defaultExtension)"
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = isITMZ
@@ -1531,7 +1531,7 @@ struct InfiniteCanvasView: View {
         }
 
         let pathExtension = url.pathExtension.lowercased()
-        if pathExtension != MyThoughtsDocumentService.fileExtension && pathExtension != ItmzExportService.fileExtension {
+        if pathExtension != MiThoughtsDocumentService.fileExtension && pathExtension != ItmzExportService.fileExtension {
             url.appendPathExtension(defaultExtension)
         }
 
@@ -1542,7 +1542,7 @@ struct InfiniteCanvasView: View {
     private func saveCurrentMap(to url: URL, shouldUpdateCurrentFile: Bool) -> Bool {
         let validationReport = MapValidator.validate(nodes: nodes, connections: connections, summaries: summaries)
         if !validationReport.isValid {
-            print("MyThoughts save validation:\n\(validationReport.summary)")
+            print("MiThoughts save validation:\n\(validationReport.summary)")
         }
 
         if isITMZFile(url) {
@@ -1550,7 +1550,7 @@ struct InfiniteCanvasView: View {
         }
 
         do {
-            try MyThoughtsDocumentService.export(
+            try MiThoughtsDocumentService.export(
                 nodes: nodes,
                 connections: connections,
                 summaries: summaries,
@@ -1570,23 +1570,23 @@ struct InfiniteCanvasView: View {
                 updateWindowTitle()
             }
 
-            showStatusMessage("Saved MyThoughts file.")
+            showStatusMessage("Saved MiThoughts file.")
             focusCanvas()
             return true
         } catch {
-            print("MyThoughts save: failed to save file to \(url.path): \(error).")
-            showStatusMessage("Could not save MyThoughts file: \(error.localizedDescription)")
+            print("MiThoughts save: failed to save file to \(url.path): \(error).")
+            showStatusMessage("Could not save MiThoughts file: \(error.localizedDescription)")
             focusCanvas()
             return false
         }
     }
 
-    private func openMyThoughtsFile() {
+    private func openMiThoughtsFile() {
         isShowingAppearancePopover = false
 
         let openPanel = NSOpenPanel()
         openPanel.title = "Open Map"
-        openPanel.message = "Open a MyThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
+        openPanel.message = "Open a MiThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
@@ -1604,6 +1604,7 @@ struct InfiniteCanvasView: View {
     }
 
     private func openRecentFile(_ url: URL) {
+        RecentFilesStore.startAccess(url)
         guard FileManager.default.fileExists(atPath: url.path) else {
             RecentFilesStore.remove(url)
             showStatusMessage("Recent file no longer exists.")
@@ -1614,7 +1615,9 @@ struct InfiniteCanvasView: View {
         MapWindowRegistry.shared.open(url)
     }
 
-    private func openMyThoughtsFile(at url: URL) {
+    private func openMiThoughtsFile(at url: URL) {
+        // Restored windows and Open Recent need their sandbox access back.
+        RecentFilesStore.startAccess(url)
         if isITMZFile(url) {
             openITMZFile(at: url)
             return
@@ -1625,19 +1628,19 @@ struct InfiniteCanvasView: View {
         }
 
         do {
-            let document = try MyThoughtsDocumentService.import(from: url)
+            let document = try MiThoughtsDocumentService.import(from: url)
             guard document.documentType == .fullMap else {
-                showStatusMessage("Open expects a full MyThoughts map. Use Import for branch files.")
+                showStatusMessage("Open expects a full MiThoughts map. Use Import for branch files.")
                 focusCanvas()
                 return
             }
 
             applyOpenedDocument(document, from: url)
-            showStatusMessage("Opened MyThoughts file.")
+            showStatusMessage("Opened MiThoughts file.")
         } catch {
             RecentFilesStore.remove(url)
-            print("MyThoughts open: failed to open \(url.path): \(error).")
-            showStatusMessage("Could not open MyThoughts file: \(error.localizedDescription)")
+            print("MiThoughts open: failed to open \(url.path): \(error).")
+            showStatusMessage("Could not open MiThoughts file: \(error.localizedDescription)")
             focusCanvas()
         }
     }
@@ -1767,14 +1770,14 @@ struct InfiniteCanvasView: View {
         updateWindowTitle()
 
         if !repairResult.actions.isEmpty {
-            print("MyThoughts template repair:\n\(repairResult.summary)")
+            print("MiThoughts template repair:\n\(repairResult.summary)")
         }
 
         showStatusMessage("Created new map from template.")
         focusCanvas()
     }
 
-    private func applyOpenedDocument(_ document: MyThoughtsDocument, from url: URL) {
+    private func applyOpenedDocument(_ document: MiThoughtsDocument, from url: URL) {
         let repairResult = MapValidator.repair(nodes: document.nodes, connections: document.connections, summaries: document.summaries)
         nodes = repairResult.nodes
         connections = repairResult.connections
@@ -1814,7 +1817,7 @@ struct InfiniteCanvasView: View {
         updateWindowTitle()
 
         if !repairResult.actions.isEmpty {
-            print("MyThoughts open repair:\n\(repairResult.summary)")
+            print("MiThoughts open repair:\n\(repairResult.summary)")
         }
     }
 
@@ -1845,7 +1848,7 @@ struct InfiniteCanvasView: View {
         let window = windowRef.window
         guard !isShowingStartScreen else {
             DispatchQueue.main.async {
-                window?.title = "MyThoughts"
+                window?.title = "MiThoughts"
                 window?.representedURL = nil
                 window?.isDocumentEdited = false
             }
@@ -1869,12 +1872,12 @@ struct InfiniteCanvasView: View {
         }
     }
 
-    private func exportMyThoughtsFile() {
+    private func exportMiThoughtsFile() {
         isShowingAppearancePopover = false
 
         let savePanel = NSSavePanel()
-        savePanel.title = "Export MyThoughts File"
-        savePanel.nameFieldStringValue = "MyThoughts.\(MyThoughtsDocumentService.fileExtension)"
+        savePanel.title = "Export MiThoughts File"
+        savePanel.nameFieldStringValue = "MiThoughts.\(MiThoughtsDocumentService.fileExtension)"
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = [myThoughtsDocumentContentType]
 
@@ -1884,12 +1887,12 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        if url.pathExtension.lowercased() != MyThoughtsDocumentService.fileExtension {
-            url.appendPathExtension(MyThoughtsDocumentService.fileExtension)
+        if url.pathExtension.lowercased() != MiThoughtsDocumentService.fileExtension {
+            url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
         }
 
         do {
-            try MyThoughtsDocumentService.export(
+            try MiThoughtsDocumentService.export(
                 nodes: nodes,
                 connections: connections,
                 summaries: summaries,
@@ -1899,11 +1902,11 @@ struct InfiniteCanvasView: View {
                 createdAt: documentCreatedAt,
                 to: url
             )
-            print("MyThoughts export: saved document to \(url.path).")
-            showStatusMessage("Exported MyThoughts file.")
+            print("MiThoughts export: saved document to \(url.path).")
+            showStatusMessage("Exported MiThoughts file.")
         } catch {
-            print("MyThoughts export: failed to save document: \(error).")
-            showStatusMessage("Could not export MyThoughts file: \(error.localizedDescription)")
+            print("MiThoughts export: failed to save document: \(error).")
+            showStatusMessage("Could not export MiThoughts file: \(error.localizedDescription)")
         }
 
         focusCanvas()
@@ -1928,7 +1931,7 @@ struct InfiniteCanvasView: View {
 
         let savePanel = NSSavePanel()
         savePanel.title = "Export Selected Branch"
-        savePanel.nameFieldStringValue = "MyThoughts Branch.\(MyThoughtsDocumentService.fileExtension)"
+        savePanel.nameFieldStringValue = "MiThoughts Branch.\(MiThoughtsDocumentService.fileExtension)"
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = [myThoughtsDocumentContentType]
 
@@ -1938,12 +1941,12 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        if url.pathExtension.lowercased() != MyThoughtsDocumentService.fileExtension {
-            url.appendPathExtension(MyThoughtsDocumentService.fileExtension)
+        if url.pathExtension.lowercased() != MiThoughtsDocumentService.fileExtension {
+            url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
         }
 
         do {
-            try MyThoughtsDocumentService.export(
+            try MiThoughtsDocumentService.export(
                 nodes: branchNodes,
                 connections: branchConnections,
                 summaries: branchSummaries(from: fragment, exportedNodeIDs: branchNodeIDs),
@@ -1957,10 +1960,10 @@ struct InfiniteCanvasView: View {
                 createdAt: Date(),
                 to: url
             )
-            print("MyThoughts branch export: saved document to \(url.path).")
+            print("MiThoughts branch export: saved document to \(url.path).")
             showStatusMessage("Exported selected branch.")
         } catch {
-            print("MyThoughts branch export: failed to save document: \(error).")
+            print("MiThoughts branch export: failed to save document: \(error).")
             showStatusMessage("Could not export selected branch: \(error.localizedDescription)")
         }
 
@@ -1972,7 +1975,7 @@ struct InfiniteCanvasView: View {
 
         let savePanel = NSSavePanel()
         savePanel.title = "Export as PDF"
-        savePanel.nameFieldStringValue = "MyThoughts Map.pdf"
+        savePanel.nameFieldStringValue = "MiThoughts Map.pdf"
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = [.pdf]
 
@@ -1990,7 +1993,7 @@ struct InfiniteCanvasView: View {
             try MapExportRenderer.writePDF(payload: currentMapExportPayload(), to: url)
             showStatusMessage("Exported PDF.")
         } catch {
-            print("MyThoughts PDF export: failed to export \(url.path): \(error).")
+            print("MiThoughts PDF export: failed to export \(url.path): \(error).")
             showStatusMessage("Could not export PDF: \(error.localizedDescription)")
         }
 
@@ -2002,7 +2005,7 @@ struct InfiniteCanvasView: View {
 
         let savePanel = NSSavePanel()
         savePanel.title = "Export as PNG"
-        savePanel.nameFieldStringValue = "MyThoughts Map.png"
+        savePanel.nameFieldStringValue = "MiThoughts Map.png"
         savePanel.canCreateDirectories = true
         savePanel.allowedContentTypes = [.png]
 
@@ -2024,7 +2027,7 @@ struct InfiniteCanvasView: View {
                 showStatusMessage("Exported PNG.")
             }
         } catch {
-            print("MyThoughts PNG export: failed to export \(url.path): \(error).")
+            print("MiThoughts PNG export: failed to export \(url.path): \(error).")
             showStatusMessage("Could not export PNG: \(error.localizedDescription)")
         }
 
@@ -2103,11 +2106,11 @@ struct InfiniteCanvasView: View {
         }
     }
 
-    private func importMyThoughtsFile() {
+    private func importMiThoughtsFile() {
         isShowingAppearancePopover = false
 
         let openPanel = NSOpenPanel()
-        openPanel.title = "Import MyThoughts File"
+        openPanel.title = "Import MiThoughts File"
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
@@ -2120,7 +2123,7 @@ struct InfiniteCanvasView: View {
         }
 
         do {
-            let document = try MyThoughtsDocumentService.import(from: url)
+            let document = try MiThoughtsDocumentService.import(from: url)
             if document.documentType == .branch {
                 importBranchDocument(document)
             } else {
@@ -2129,8 +2132,8 @@ struct InfiniteCanvasView: View {
             }
         } catch {
             pendingImportDocument = nil
-            print("MyThoughts import: failed to load document from \(url.path): \(error).")
-            showStatusMessage("Could not import MyThoughts file: \(error.localizedDescription)")
+            print("MiThoughts import: failed to load document from \(url.path): \(error).")
+            showStatusMessage("Could not import MiThoughts file: \(error.localizedDescription)")
             focusCanvas()
         }
     }
@@ -2188,7 +2191,7 @@ struct InfiniteCanvasView: View {
             fileURL: { currentFileURL ?? windowFileURL },
             isDirty: { isDirty },
             isBlank: { nodes.isEmpty || (isShowingStartScreen && !isDirty && currentFileURL != nil) },
-            openHere: { url in openMyThoughtsFile(at: url) },
+            openHere: { url in openMiThoughtsFile(at: url) },
             confirmClose: { confirmUnsavedChangesIfNeeded() }
         ))
         if let window = windowRef.window {
@@ -2868,7 +2871,7 @@ struct InfiniteCanvasView: View {
         isShowingAppearancePopover = false
 
         let report = MapValidator.validate(nodes: nodes, connections: connections, summaries: summaries)
-        print("MyThoughts validation:\n\(report.summary)")
+        print("MiThoughts validation:\n\(report.summary)")
         showStatusMessage(report.summary)
         focusCanvas()
     }
@@ -2886,12 +2889,12 @@ struct InfiniteCanvasView: View {
 
         if result.validationReport.isValid {
             saveNodes()
-            print("MyThoughts repair:\n\(result.summary)")
+            print("MiThoughts repair:\n\(result.summary)")
             showStatusMessage(result.summary)
         } else {
             saveNodes()
             let message = "\(result.summary)\n\nRemaining issues:\n\(result.validationReport.summary)"
-            print("MyThoughts repair left validation issues:\n\(message)")
+            print("MiThoughts repair left validation issues:\n\(message)")
             showStatusMessage(message)
         }
 
@@ -2935,13 +2938,13 @@ struct InfiniteCanvasView: View {
         centerInitialContentIfNeeded(in: viewportSize)
 
         if repairResult.actions.isEmpty && repairResult.validationReport.isValid {
-            showStatusMessage("Imported MyThoughts file.")
+            showStatusMessage("Imported MiThoughts file.")
         } else if repairResult.validationReport.isValid {
-            print("MyThoughts import repair:\n\(repairResult.summary)")
-            showStatusMessage("Imported and repaired MyThoughts file.\n\n\(repairResult.summary)")
+            print("MiThoughts import repair:\n\(repairResult.summary)")
+            showStatusMessage("Imported and repaired MiThoughts file.\n\n\(repairResult.summary)")
         } else {
-            let message = "Imported MyThoughts file with remaining validation issues.\n\n\(repairResult.validationReport.summary)"
-            print("MyThoughts import validation:\n\(message)")
+            let message = "Imported MiThoughts file with remaining validation issues.\n\n\(repairResult.validationReport.summary)"
+            print("MiThoughts import validation:\n\(message)")
             showStatusMessage(message)
         }
 
@@ -3048,7 +3051,7 @@ struct InfiniteCanvasView: View {
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Reminder.")
             case .failure(let error):
-                print("MyThoughts Apple Reminders: failed to create reminder: \(error).")
+                print("MiThoughts Apple Reminders: failed to create reminder: \(error).")
                 showStatusMessage(appleReminderErrorMessage(for: error))
             }
         }
@@ -3106,7 +3109,7 @@ struct InfiniteCanvasView: View {
                 historyManager.removeAll()
                 showStatusMessage("Created Apple Calendar Event.")
             case .failure(let error):
-                print("MyThoughts Apple Calendar: failed to create event: \(error).")
+                print("MiThoughts Apple Calendar: failed to create event: \(error).")
                 showStatusMessage(appleCalendarErrorMessage(for: error))
             }
         }
@@ -3134,7 +3137,7 @@ struct InfiniteCanvasView: View {
         recordUndoSnapshot()
         nodes[nodeIndex].appleReminderID = nil
         saveNodes()
-        showStatusMessage("Cleared the Apple Reminder link in MyThoughts. This does not delete the Apple Reminder.")
+        showStatusMessage("Cleared the Apple Reminder link in MiThoughts. This does not delete the Apple Reminder.")
     }
 
     private func clearAppleCalendarEventLinkForDetailsNode() {
@@ -3151,7 +3154,7 @@ struct InfiniteCanvasView: View {
         recordUndoSnapshot()
         nodes[nodeIndex].appleCalendarEventID = nil
         saveNodes()
-        showStatusMessage("Cleared the Apple Calendar event link in MyThoughts. This does not delete the Apple Calendar event.")
+        showStatusMessage("Cleared the Apple Calendar event link in MiThoughts. This does not delete the Apple Calendar event.")
     }
 
     private func appleReminderErrorMessage(for error: Error) -> String {
@@ -3499,7 +3502,7 @@ struct InfiniteCanvasView: View {
         )
     }
 
-    private func makeFragment(from document: MyThoughtsDocument) -> CopiedMapFragment {
+    private func makeFragment(from document: MiThoughtsDocument) -> CopiedMapFragment {
         let nodeIDs = Set(document.nodes.map(\.id))
         let rootNodeIDs = document.nodes
             .filter { node in
@@ -3574,14 +3577,14 @@ struct InfiniteCanvasView: View {
         }
     }
 
-    private func importBranchDocument(_ document: MyThoughtsDocument) {
+    private func importBranchDocument(_ document: MiThoughtsDocument) {
         let repairResult = MapValidator.repair(nodes: document.nodes, connections: document.connections, summaries: document.summaries)
         if !repairResult.validationReport.isValid {
-            print("MyThoughts branch import validation:\n\(repairResult.validationReport.summary)")
+            print("MiThoughts branch import validation:\n\(repairResult.validationReport.summary)")
         }
 
         let fragment = makeFragment(
-            from: MyThoughtsDocument(
+            from: MiThoughtsDocument(
                 documentType: .branch,
                 nodes: repairResult.nodes,
                 connections: repairResult.connections,
@@ -3751,7 +3754,7 @@ struct InfiniteCanvasView: View {
     private func validateMapAfterPaste() {
         let report = MapValidator.validate(nodes: nodes, connections: connections)
         if !report.isValid {
-            print("MyThoughts paste validation:\n\(report.summary)")
+            print("MiThoughts paste validation:\n\(report.summary)")
         }
     }
 
@@ -3830,7 +3833,7 @@ struct InfiniteCanvasView: View {
     }
 
     private var myThoughtsDocumentContentType: UTType {
-        UTType(filenameExtension: MyThoughtsDocumentService.fileExtension) ?? .json
+        UTType(filenameExtension: MiThoughtsDocumentService.fileExtension) ?? .json
     }
 
     private var iThoughtsDocumentContentType: UTType {
@@ -5451,8 +5454,8 @@ struct InfiniteCanvasView: View {
 
             Divider()
 
-            Button("Export MyThoughts File") {
-                exportMyThoughtsFile()
+            Button("Export MiThoughts File") {
+                exportMiThoughtsFile()
             }
 
             Button("Export Selected Branch") {
@@ -5460,8 +5463,8 @@ struct InfiniteCanvasView: View {
             }
             .disabled(selectedVisibleNodeIDs().isEmpty)
 
-            Button("Import MyThoughts File") {
-                importMyThoughtsFile()
+            Button("Import MiThoughts File") {
+                importMiThoughtsFile()
             }
 
             Button("Import iThoughts .itmz") {
@@ -7461,7 +7464,7 @@ private struct NodeDetailsView: View {
 
                     Button("Clear Apple Reminder Link", role: .destructive, action: onClearAppleReminderLink)
 
-                    Text("This only clears the link in MyThoughts. It does not delete the Apple Reminder.")
+                    Text("This only clears the link in MiThoughts. It does not delete the Apple Reminder.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -7481,7 +7484,7 @@ private struct NodeDetailsView: View {
 
                     Button("Clear Calendar Event Link", role: .destructive, action: onClearAppleCalendarEventLink)
 
-                    Text("This only clears the link in MyThoughts. It does not delete the Apple Calendar event.")
+                    Text("This only clears the link in MiThoughts. It does not delete the Apple Calendar event.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -7708,7 +7711,7 @@ struct NotePanelSettings: Codable, Equatable {
             settings.height = clampHeight(settings.height)
             return settings
         } catch {
-            print("MyThoughts NotePanelSettings: failed to load settings: \(error). Using defaults.")
+            print("MiThoughts NotePanelSettings: failed to load settings: \(error). Using defaults.")
             return NotePanelSettings()
         }
     }
@@ -7721,7 +7724,7 @@ struct NotePanelSettings: Codable, Equatable {
             let data = try JSONEncoder().encode(settings)
             UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
         } catch {
-            print("MyThoughts NotePanelSettings: failed to save settings: \(error).")
+            print("MiThoughts NotePanelSettings: failed to save settings: \(error).")
         }
     }
 }
@@ -7737,7 +7740,7 @@ struct TaskDisplaySettings: Codable, Equatable {
     var showResources = true
     /// iThoughts "Hide completed tasks".
     var hideCompletedTasks = false
-    /// Sync linked Reminders/Calendar items when MyThoughts becomes active.
+    /// Sync linked Reminders/Calendar items when MiThoughts becomes active.
     var autoSyncWithApple = true
     var version = TaskDisplaySettings.currentVersion
 
@@ -8050,7 +8053,7 @@ struct CanvasAppearance: Codable, Equatable {
         do {
             return try JSONDecoder().decode(CanvasAppearance.self, from: data)
         } catch {
-            print("MyThoughts CanvasAppearance: failed to load settings: \(error). Using defaults.")
+            print("MiThoughts CanvasAppearance: failed to load settings: \(error). Using defaults.")
             return CanvasAppearance()
         }
     }
@@ -8062,7 +8065,7 @@ struct CanvasAppearance: Codable, Equatable {
             let data = try JSONEncoder().encode(appWide)
             UserDefaults.standard.set(data, forKey: Self.userDefaultsKey)
         } catch {
-            print("MyThoughts CanvasAppearance: failed to save settings: \(error).")
+            print("MiThoughts CanvasAppearance: failed to save settings: \(error).")
         }
     }
 

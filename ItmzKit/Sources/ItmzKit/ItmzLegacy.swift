@@ -29,7 +29,7 @@ enum ItmzLegacy {
             throw Failure.missingMapData
         }
 
-        var out = "<iThoughts version=\"4.0\" app=\"MyThoughts\" app-version=\"1.0\""
+        var out = "<iThoughts version=\"4.0\" app=\"MiThoughts\" app-version=\"1.0\""
         out += " modified=\"\(ItmzFormat.timestamp(Date()))\"><topics>\n"
         for topic in reader.topics {
             write(topic, to: &out)

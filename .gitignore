@@ -46,3 +46,6 @@ Config.local.plist
 *.assets/
 preview.png
 mapdata.xml
+
+# Local signing settings (team ID) — never committed
+Config/Signing.local.xcconfig
