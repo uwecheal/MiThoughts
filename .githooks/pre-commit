@@ -2,7 +2,7 @@
 # Blocks commits that would publish private mind maps or local paths.
 # Enabled per clone with: git config core.hooksPath .githooks
 status=0
-blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(itmz|itm|itmz-style|mythoughts|mm|opml)$|(^|/)(mapdata\.xml|preview\.png)$|\.assets/' || true)
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -iE '\.(itmz|itm|itmz-style|mythoughts|mithoughts|mm|opml)$|(^|/)(mapdata\.xml|preview\.png)$|\.assets/' || true)
 if [ -n "$blocked" ]; then
     echo "pre-commit: refusing to commit mind-map files (they may be private):"
     echo "$blocked" | sed 's/^/  /'

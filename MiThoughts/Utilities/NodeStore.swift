@@ -1,7 +1,21 @@
 import Foundation
 
 enum MiThoughtsDocumentService {
-    static let fileExtension = "mythoughts"
+    /// New maps are saved as `.MiThoughts`; maps saved as `.mythoughts` (the earlier name) still open.
+    static let fileExtension = "MiThoughts"
+    static let typeIdentifier = "com.uwecheal.mithoughts.map"
+
+    static func isDocumentFile(_ url: URL) -> Bool {
+        ["mithoughts", "mythoughts"].contains(url.pathExtension.lowercased())
+    }
+
+    /// The save panel lowercases the suffix (`.mithoughts`); new files are written as `.MiThoughts`.
+    static func preferredSpelling(of url: URL) -> URL {
+        guard url.pathExtension.lowercased() == "mithoughts", url.pathExtension != fileExtension else {
+            return url
+        }
+        return url.deletingPathExtension().appendingPathExtension(fileExtension)
+    }
 
     static func makeDocument(
         nodes: [CanvasNode],

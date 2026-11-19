@@ -235,6 +235,6 @@ Verified: 22 logic checks (actions, due status, filters, sorting, settings migra
 - Plain digit keys still set the visible depth, but no longer swallow ⌘1 … ⌘0.
 
 **Privacy guard**
-- `.gitignore` excludes map files and exports: `.itmz`, `.itm`, `.mythoughts`, `.mm`, `.opml`, `*.assets/`, `mapdata.xml`, `preview.png`.
+- `.gitignore` excludes map files and exports: `.itmz`, `.itm`, `.MiThoughts` (earlier `.mythoughts`), `.mm`, `.opml`, `*.assets/`, `mapdata.xml`, `preview.png`.
 - `.githooks/pre-commit` refuses commits that add such files or local/iCloud paths. Enable it per clone with `git config core.hooksPath .githooks`.
 - Test maps are only ever read from outside the repository.

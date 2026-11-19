@@ -225,16 +225,24 @@ final class MapWindowRegistry {
         guard let entry = entries.first(where: { $0.id == windowID }) else {
             return true
         }
-        // The autosaving window keeps its map across launches, as before.
-        guard !entry.ownsAutosave, entry.isDirty() else {
+        guard needsSaveOnClose(entry) else {
             return true
         }
         return entry.confirmClose()
     }
 
+    /// A changed map with a file is saved on close. A new, never-saved map in the
+    /// autosaving window is kept by the crash-safe autosave instead, as before.
+    private func needsSaveOnClose(_ entry: Entry) -> Bool {
+        guard entry.isDirty() else {
+            return false
+        }
+        return !entry.ownsAutosave || entry.fileURL() != nil
+    }
+
     /// Before quitting: every window with unsaved changes that autosave does not cover asks once.
     func confirmQuit() -> Bool {
-        for entry in entries where !entry.ownsAutosave && entry.isDirty() {
+        for entry in entries where needsSaveOnClose(entry) {
             entry.windowRef.window?.makeKeyAndOrderFront(nil)
             if !entry.confirmClose() {
                 return false

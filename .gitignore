@@ -41,6 +41,8 @@ Config.local.plist
 *.itm
 *.itmz-style
 *.mythoughts
+*.MiThoughts
+*.mithoughts
 *.mm
 *.opml
 *.assets/

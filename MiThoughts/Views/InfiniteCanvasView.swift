@@ -622,6 +622,8 @@ struct InfiniteCanvasView: View {
             .onDisappear {
                 MapWindowRegistry.shared.unregister(windowID)
                 if ownsAutosave {
+                    // A map saved while closing must not come back as "unsaved" in the next window.
+                    AutosaveInfo.record(hasUnsavedChanges: isDirty && !nodes.isEmpty, fileURL: currentFileURL)
                     AutosaveOwnership.release()
                 }
             }
@@ -1516,7 +1518,7 @@ struct InfiniteCanvasView: View {
         let isITMZ = isITMZFile(currentFileURL) || (currentFileURL == nil && itmzSession != nil)
         let savePanel = NSSavePanel()
         savePanel.title = "Save Map"
-        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .mythoughts for MiThoughts-only features."
+        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .MiThoughts for MiThoughts-only features."
         let defaultExtension = isITMZ ? ItmzExportService.fileExtension : MiThoughtsDocumentService.fileExtension
         savePanel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "\(suggestedMapFileName).\(defaultExtension)"
         savePanel.canCreateDirectories = true
@@ -1530,10 +1532,10 @@ struct InfiniteCanvasView: View {
             return false
         }
 
-        let pathExtension = url.pathExtension.lowercased()
-        if pathExtension != MiThoughtsDocumentService.fileExtension && pathExtension != ItmzExportService.fileExtension {
+        if !MiThoughtsDocumentService.isDocumentFile(url) && !isITMZFile(url) {
             url.appendPathExtension(defaultExtension)
         }
+        url = MiThoughtsDocumentService.preferredSpelling(of: url)
 
         return saveCurrentMap(to: url, shouldUpdateCurrentFile: true)
     }
@@ -1570,7 +1572,7 @@ struct InfiniteCanvasView: View {
                 updateWindowTitle()
             }
 
-            showStatusMessage("Saved MiThoughts file.")
+            logStatus("Saved MiThoughts file.")
             focusCanvas()
             return true
         } catch {
@@ -1586,7 +1588,7 @@ struct InfiniteCanvasView: View {
 
         let openPanel = NSOpenPanel()
         openPanel.title = "Open Map"
-        openPanel.message = "Open a MiThoughts (.mythoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
+        openPanel.message = "Open a MiThoughts (.MiThoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
@@ -1636,7 +1638,7 @@ struct InfiniteCanvasView: View {
             }
 
             applyOpenedDocument(document, from: url)
-            showStatusMessage("Opened MiThoughts file.")
+            logStatus("Opened MiThoughts file.")
         } catch {
             RecentFilesStore.remove(url)
             print("MiThoughts open: failed to open \(url.path): \(error).")
@@ -1678,7 +1680,7 @@ struct InfiniteCanvasView: View {
         centerInitialContentIfNeeded(in: viewportSize)
         isShowingStartScreen = false
         updateWindowTitle()
-        showStatusMessage("Created new untitled map.")
+        logStatus("Created new untitled map.")
         focusCanvas()
         return true
     }
@@ -1773,7 +1775,7 @@ struct InfiniteCanvasView: View {
             print("MiThoughts template repair:\n\(repairResult.summary)")
         }
 
-        showStatusMessage("Created new map from template.")
+        logStatus("Created new map from template.")
         focusCanvas()
     }
 
@@ -1821,14 +1823,23 @@ struct InfiniteCanvasView: View {
         }
     }
 
+    /// Before the map is closed or replaced: a map that has a file is saved to it
+    /// without asking (as iThoughts does); only a new, never-saved map asks.
     private func confirmUnsavedChangesIfNeeded() -> Bool {
         guard isDirty else {
             return true
         }
+        if currentFileURL != nil {
+            let saved = saveCurrentFile()
+            if saved && ownsAutosave {
+                AutosaveInfo.record(hasUnsavedChanges: false, fileURL: currentFileURL)
+            }
+            return saved
+        }
 
         let alert = NSAlert()
-        alert.messageText = "You have unsaved changes. Save before opening another file?"
-        alert.informativeText = "Your local autosave remains available, but explicit file changes have not been saved."
+        alert.messageText = "Save this new map?"
+        alert.informativeText = "It has not been saved to a file yet. If you don't save it, your changes will be lost."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Don't Save")
         alert.addButton(withTitle: "Cancel")
@@ -1887,9 +1898,10 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        if url.pathExtension.lowercased() != MiThoughtsDocumentService.fileExtension {
+        if !MiThoughtsDocumentService.isDocumentFile(url) {
             url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
         }
+        url = MiThoughtsDocumentService.preferredSpelling(of: url)
 
         do {
             try MiThoughtsDocumentService.export(
@@ -1903,7 +1915,7 @@ struct InfiniteCanvasView: View {
                 to: url
             )
             print("MiThoughts export: saved document to \(url.path).")
-            showStatusMessage("Exported MiThoughts file.")
+            logStatus("Exported MiThoughts file.")
         } catch {
             print("MiThoughts export: failed to save document: \(error).")
             showStatusMessage("Could not export MiThoughts file: \(error.localizedDescription)")
@@ -1941,9 +1953,10 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        if url.pathExtension.lowercased() != MiThoughtsDocumentService.fileExtension {
+        if !MiThoughtsDocumentService.isDocumentFile(url) {
             url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
         }
+        url = MiThoughtsDocumentService.preferredSpelling(of: url)
 
         do {
             try MiThoughtsDocumentService.export(
@@ -1961,7 +1974,7 @@ struct InfiniteCanvasView: View {
                 to: url
             )
             print("MiThoughts branch export: saved document to \(url.path).")
-            showStatusMessage("Exported selected branch.")
+            logStatus("Exported selected branch.")
         } catch {
             print("MiThoughts branch export: failed to save document: \(error).")
             showStatusMessage("Could not export selected branch: \(error.localizedDescription)")
@@ -1991,7 +2004,7 @@ struct InfiniteCanvasView: View {
 
         do {
             try MapExportRenderer.writePDF(payload: currentMapExportPayload(), to: url)
-            showStatusMessage("Exported PDF.")
+            logStatus("Exported PDF.")
         } catch {
             print("MiThoughts PDF export: failed to export \(url.path): \(error).")
             showStatusMessage("Could not export PDF: \(error.localizedDescription)")
@@ -2024,7 +2037,7 @@ struct InfiniteCanvasView: View {
             if let warning = result.warning {
                 showStatusMessage("Exported PNG.\n\n\(warning)")
             } else {
-                showStatusMessage("Exported PNG.")
+                logStatus("Exported PNG.")
             }
         } catch {
             print("MiThoughts PNG export: failed to export \(url.path): \(error).")
@@ -2292,7 +2305,7 @@ struct InfiniteCanvasView: View {
             if !repairResult.actions.isEmpty {
                 print("iThoughts open repair:\n\(repairResult.summary)")
             }
-            showStatusMessage(message)
+            logStatus(message)
         } catch {
             RecentFilesStore.remove(url)
             print("iThoughts open: failed to open \(url.path): \(error).")
@@ -2335,7 +2348,7 @@ struct InfiniteCanvasView: View {
             if let backupURL = result.backupURL {
                 message += "\n\nThe previous version was backed up to \(backupURL.lastPathComponent)."
             }
-            showStatusMessage(message)
+            logStatus(message)
             focusCanvas()
             return true
         } catch {
@@ -2383,7 +2396,7 @@ struct InfiniteCanvasView: View {
                 session: exportSession,
                 to: url
             )
-            showStatusMessage("Exported iThoughts file \(url.lastPathComponent).")
+            logStatus("Exported iThoughts file \(url.lastPathComponent).")
         } catch {
             print("iThoughts export: failed to write \(url.path): \(error).")
             showStatusMessage("Could not export iThoughts file: \(error.localizedDescription)")
@@ -2524,7 +2537,7 @@ struct InfiniteCanvasView: View {
             hasCenteredInitialContent = true
             isShowingStartScreen = false
             updateWindowTitle()
-            showStatusMessage("Imported \(url.lastPathComponent) (\(result.topicCount) topics) as a new map. Use Save to keep it.")
+            logStatus("Imported \(url.lastPathComponent) (\(result.topicCount) topics) as a new map. Use Save to keep it.")
         } catch {
             print("Outline import: failed to read \(url.path): \(error).")
             showStatusMessage("Could not open \(url.lastPathComponent): \(error.localizedDescription)")
@@ -2563,7 +2576,7 @@ struct InfiniteCanvasView: View {
                 to: url
             )
             let images = written.count - 1
-            showStatusMessage("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
+            logStatus("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
         } catch {
             print("\(format.label) export: failed to write \(url.path): \(error).")
             showStatusMessage("Could not export \(format.label): \(error.localizedDescription)")
@@ -2938,7 +2951,7 @@ struct InfiniteCanvasView: View {
         centerInitialContentIfNeeded(in: viewportSize)
 
         if repairResult.actions.isEmpty && repairResult.validationReport.isValid {
-            showStatusMessage("Imported MiThoughts file.")
+            logStatus("Imported MiThoughts file.")
         } else if repairResult.validationReport.isValid {
             print("MiThoughts import repair:\n\(repairResult.summary)")
             showStatusMessage("Imported and repaired MiThoughts file.\n\n\(repairResult.summary)")
@@ -3000,7 +3013,7 @@ struct InfiniteCanvasView: View {
 
         let importNotes = importResult.report.notImportedDescription.map { "\n\n\($0)" } ?? ""
         if repairResult.actions.isEmpty && repairResult.validationReport.isValid {
-            showStatusMessage("Imported iThoughts map (\(importResult.report.importedDescription)).\(importNotes)")
+            logStatus("Imported iThoughts map (\(importResult.report.importedDescription)).\(importNotes)")
         } else if repairResult.validationReport.isValid {
             print("iThoughts import repair:\n\(repairResult.summary)")
             showStatusMessage("Imported and repaired iThoughts map.\n\n\(repairResult.summary)\(importNotes)")
@@ -3049,7 +3062,7 @@ struct InfiniteCanvasView: View {
                 nodes[currentIndex].appleSync = syncState
                 saveNodes()
                 historyManager.removeAll()
-                showStatusMessage("Created Apple Reminder.")
+                logStatus("Created Apple Reminder.")
             case .failure(let error):
                 print("MiThoughts Apple Reminders: failed to create reminder: \(error).")
                 showStatusMessage(appleReminderErrorMessage(for: error))
@@ -3107,7 +3120,7 @@ struct InfiniteCanvasView: View {
                 nodes[currentIndex].appleSync?.event = nil
                 saveNodes()
                 historyManager.removeAll()
-                showStatusMessage("Created Apple Calendar Event.")
+                logStatus("Created Apple Calendar Event.")
             case .failure(let error):
                 print("MiThoughts Apple Calendar: failed to create event: \(error).")
                 showStatusMessage(appleCalendarErrorMessage(for: error))
@@ -3176,6 +3189,12 @@ struct InfiniteCanvasView: View {
     private func showStatusMessage(_ message: String) {
         statusMessage = message
         isShowingStatusMessage = true
+    }
+
+    /// Routine confirmations (opened, saved, exported, undone …) only go to the log:
+    /// the window title and the map itself already show the result.
+    private func logStatus(_ message: String) {
+        print("MiThoughts: \(message)")
     }
 
     private func openSearchPanel() {
@@ -3602,7 +3621,7 @@ struct InfiniteCanvasView: View {
             pasteFragment(fragment, at: visibleCanvasCenter, asChildOf: nil)
         }
 
-        showStatusMessage("Imported branch.")
+        logStatus("Imported branch.")
     }
 
     private func pasteFragment(
@@ -3833,7 +3852,7 @@ struct InfiniteCanvasView: View {
     }
 
     private var myThoughtsDocumentContentType: UTType {
-        UTType(filenameExtension: MiThoughtsDocumentService.fileExtension) ?? .json
+        UTType(MiThoughtsDocumentService.typeIdentifier) ?? UTType(filenameExtension: MiThoughtsDocumentService.fileExtension) ?? .json
     }
 
     private var iThoughtsDocumentContentType: UTType {
@@ -4551,23 +4570,23 @@ struct InfiniteCanvasView: View {
 
     private func performUndo() {
         guard let snapshot = historyManager.undo(currentSnapshot: currentHistorySnapshot) else {
-            showStatusMessage("Nothing to undo.")
+            NSSound.beep()
             return
         }
 
         applyHistorySnapshot(snapshot)
-        showStatusMessage("Undone.")
+        logStatus("Undone.")
         focusCanvas()
     }
 
     private func performRedo() {
         guard let snapshot = historyManager.redo(currentSnapshot: currentHistorySnapshot) else {
-            showStatusMessage("Nothing to redo.")
+            NSSound.beep()
             return
         }
 
         applyHistorySnapshot(snapshot)
-        showStatusMessage("Redone.")
+        logStatus("Redone.")
         focusCanvas()
     }
 

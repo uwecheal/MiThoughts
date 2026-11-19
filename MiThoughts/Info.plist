@@ -13,7 +13,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.uwecheal.mythoughts.map</string>
+				<string>com.uwecheal.mithoughts.map</string>
 			</array>
 		</dict>
 		<dict>
@@ -33,7 +33,7 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>com.uwecheal.mythoughts.map</string>
+			<string>com.uwecheal.mithoughts.map</string>
 			<key>UTTypeDescription</key>
 			<string>MiThoughts Map</string>
 			<key>UTTypeConformsTo</key>
@@ -44,6 +44,7 @@
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
+					<string>MiThoughts</string>
 					<string>mythoughts</string>
 				</array>
 			</dict>

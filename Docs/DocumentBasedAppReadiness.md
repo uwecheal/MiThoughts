@@ -11,7 +11,7 @@ The current persistence and file system are split across three layers:
 | Layer | Current implementation | Purpose |
 | --- | --- | --- |
 | Local autosave | `NodeStore` writes `Application Support/MiThoughts/nodes.json` | Restores the last working map between launches |
-| Explicit `.mythoughts` files | `MiThoughtsDocumentService` encodes/decodes `MiThoughtsDocument` | Save, Save As, Open, full-map export/import, branch export/import |
+| Explicit `.MiThoughts` files | `MiThoughtsDocumentService` encodes/decodes `MiThoughtsDocument` | Save, Save As, Open, full-map export/import, branch export/import |
 | UserDefaults settings | `CanvasAppearance`, `NotePanelSettings`, `OutlineSettings`, `RecentFilesStore` | Appearance defaults, note panel state, outline visibility, recent files |
 
 The app already has a stable document payload model:
@@ -39,7 +39,7 @@ That model is a good foundation for a future document wrapper, but the surroundi
 - `NodeStore.saveDocument(nodes:connections:)`
 - `markDirty()` when requested
 
-This means local autosave is used for nearly every map mutation, independent of whether the user has explicitly saved a `.mythoughts` file.
+This means local autosave is used for nearly every map mutation, independent of whether the user has explicitly saved a `.MiThoughts` file.
 
 ### Explicit Save
 
@@ -49,11 +49,11 @@ This means local autosave is used for nearly every map mutation, independent of 
 
 ### Save As
 
-`saveCurrentFileAs()` presents `NSSavePanel`, enforces the `.mythoughts` extension, and delegates to `saveCurrentMap`.
+`saveCurrentFileAs()` presents `NSSavePanel`, enforces the `.MiThoughts` extension, and delegates to `saveCurrentMap`.
 
 ### Open
 
-`openMiThoughtsFile()` asks about unsaved changes, presents `NSOpenPanel`, imports a `.mythoughts` file, rejects branch documents for Open, then calls `applyOpenedDocument`.
+`openMiThoughtsFile()` asks about unsaved changes, presents `NSOpenPanel`, imports a `.MiThoughts` file, rejects branch documents for Open, then calls `applyOpenedDocument`.
 
 `applyOpenedDocument` repairs the imported map, replaces in-memory nodes and connections, applies document canvas/note-panel settings, clears transient UI state, selects a root node, centers it, sets `currentFileURL`, updates recent files, clears dirty state, writes local autosave, saves UserDefaults settings, and hides the Start Screen.
 
@@ -83,7 +83,7 @@ The Start Screen reuses existing commands:
 - Recent Files -> `openRecentFile(_:)`
 - Continue Last Working Map -> hide Start Screen
 
-### Import `.mythoughts`
+### Import `.MiThoughts`
 
 `importMiThoughtsFile()` is separate from Open.
 
@@ -98,13 +98,13 @@ Full-map import is undoable through a snapshot before replacement. It does not c
 
 This is a conversion/import operation, not an Open operation.
 
-### Export `.mythoughts`
+### Export `.MiThoughts`
 
-`exportMiThoughtsFile()` writes the current full map to a chosen `.mythoughts` file but does not update `currentFileURL` or clear dirty state. This is correctly treated as export, not save.
+`exportMiThoughtsFile()` writes the current full map to a chosen `.MiThoughts` file but does not update `currentFileURL` or clear dirty state. This is correctly treated as export, not save.
 
 ### Export Selected Branch
 
-`exportSelectedBranchFile()` collects selected top-level branches and descendants, sanitizes external Apple IDs, writes a `.mythoughts` document with `documentType = branch`, and does not change the current map file URL.
+`exportSelectedBranchFile()` collects selected top-level branches and descendants, sanitizes external Apple IDs, writes a `.MiThoughts` document with `documentType = branch`, and does not change the current map file URL.
 
 ### PDF / PNG / Print
 
@@ -168,7 +168,7 @@ This is a conversion/import operation, not an Open operation.
 
 ### Settings Ownership
 
-`CanvasAppearance` and `NotePanelSettings` are both encoded into `.mythoughts` documents and also persisted in UserDefaults. This creates ambiguity:
+`CanvasAppearance` and `NotePanelSettings` are both encoded into `.MiThoughts` documents and also persisted in UserDefaults. This creates ambiguity:
 
 - Are theme/grid/node-style settings per map?
 - Are note panel width/visibility per app/window?
@@ -200,7 +200,7 @@ Apple IDs are stored on nodes and exported/imported. They are local external ref
 
 ### Branch Documents
 
-`.mythoughts` supports `documentType = branch`. A `DocumentGroup` opener must not accidentally treat branch files as standalone full documents unless that is an intentional future behavior.
+`.MiThoughts` supports `documentType = branch`. A `DocumentGroup` opener must not accidentally treat branch files as standalone full documents unless that is an intentional future behavior.
 
 ## Recommendation
 
@@ -245,7 +245,7 @@ Create a future-ready `FileDocument` or `ReferenceFileDocument` wrapper around t
 
 Add unit-style or utility-level tests for:
 
-- current `.mythoughts` files
+- current `.MiThoughts` files
 - older JSON files
 - branch documents
 - missing newer fields
@@ -293,7 +293,7 @@ Only after `DocumentGroup` is stable, consider multiple open maps. This requires
 | File | Relevance |
 | --- | --- |
 | `MiThoughts/Views/InfiniteCanvasView.swift` | Owns most document state, autosave, file commands, import/export, Start Screen, undo, and UI state |
-| `MiThoughts/Utilities/NodeStore.swift` | Defines `.mythoughts` document model/service, autosave store, recent files, file commands |
+| `MiThoughts/Utilities/NodeStore.swift` | Defines `.MiThoughts` document model/service, autosave store, recent files, file commands |
 | `MiThoughts/MiThoughtsApp.swift` | Defines current app scene and menu commands |
 | `MiThoughts/Utilities/HistoryManager.swift` | Owns snapshot undo/redo model |
 | `MiThoughts/Utilities/MapValidator.swift` | Validates and repairs document structure |
