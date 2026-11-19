@@ -62,7 +62,7 @@ struct IThoughtsImportResult {
     var topicUUIDs: [UUID: String] = [:]
     /// Relationship id -> original iThoughts relationship uuid string.
     var relationshipUUIDs: [UUID: String] = [:]
-    /// What was added to iThoughts canvas coordinates to get MyThoughts coordinates.
+    /// What was added to iThoughts canvas coordinates to get MiThoughts coordinates.
     var canvasOffset: CGPoint = .zero
     /// Line shapes, canvas and branch colours from the map's `style.xml`.
     var mapStyle: MapStyle?
@@ -82,10 +82,10 @@ enum IThoughtsImportError: LocalizedError {
     }
 }
 
-/// Converts an iThoughts map into MyThoughts nodes, keeping the original layout.
+/// Converts an iThoughts map into MiThoughts nodes, keeping the original layout.
 ///
 /// iThoughts stores each topic's *centre* relative to its parent's centre
-/// (`position="{x, y}"`); MyThoughts stores absolute top-left corners. Floating
+/// (`position="{x, y}"`); MiThoughts stores absolute top-left corners. Floating
 /// topics become separate roots, folded topics stay collapsed, task fields,
 /// notes, links, markers and summaries are mapped. See Docs/ITMZ_FORMAT.md.
 enum IThoughtsImportService {
@@ -170,7 +170,7 @@ enum IThoughtsImportService {
         }
     }
 
-    /// iThoughts icon name -> closest MyThoughts marker (nil = no equivalent).
+    /// iThoughts icon name -> closest MiThoughts marker (nil = no equivalent).
     static func marker(forIcon name: String) -> NodeMarker? {
         switch name {
         case "idea":
@@ -196,7 +196,7 @@ enum IThoughtsImportService {
         }
     }
 
-    /// MyThoughts marker -> iThoughts icon name (for writing back).
+    /// MiThoughts marker -> iThoughts icon name (for writing back).
     static func icon(for marker: NodeMarker) -> String? {
         switch marker {
         case .none: nil

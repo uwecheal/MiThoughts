@@ -99,7 +99,9 @@ enum OutlineFormatService {
         case .freemind:
             data = Data(freemind(tree: tree, relationships: relationships, title: title, assets: assets).utf8)
         }
-        try assets.flush()
+        // In the App Sandbox only the chosen file is writable, so the images folder
+        // next to it may be refused; the outline itself is still written.
+        try? assets.flush()
         try data.write(to: url, options: .atomic)
         return [url] + assets.written
     }

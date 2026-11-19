@@ -7,12 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1A00020F2C17500000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0002102C17500000000001 /* Assets.xcassets */; };
 		1A0002072C17500000000001 /* TaskManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002082C17500000000001 /* TaskManagement.swift */; };
 		1A0002052C17500000000001 /* OutlineFormatService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002062C17500000000001 /* OutlineFormatService.swift */; };
 		1A0002032C17500000000001 /* TopicStyleRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002042C17500000000001 /* TopicStyleRendering.swift */; };
 		1A00020B2C17500000000001 /* MapWindowSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00020C2C17500000000001 /* MapWindowSupport.swift */; };
 		1A0002012C17500000000001 /* ItmzExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0002022C17500000000001 /* ItmzExportService.swift */; };
-		1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000022C17500000000001 /* MyThoughtsApp.swift */; };
+		1A0000012C17500000000001 /* MiThoughtsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000022C17500000000001 /* MiThoughtsApp.swift */; };
 		1A0000032C17500000000001 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000042C17500000000001 /* ContentView.swift */; };
 		1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000182C17500000000001 /* InfiniteCanvasView.swift */; };
 		1A0000192C17500000000001 /* CanvasNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001A2C17500000000001 /* CanvasNode.swift */; };
@@ -29,7 +30,7 @@
 		1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */; };
 		1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000302C17500000000001 /* TemplateChooserView.swift */; };
 		1A0000312C17500000000001 /* StartScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000322C17500000000001 /* StartScreenView.swift */; };
-		1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */; };
+		1A0000332C17500000000001 /* MiThoughtsDocumentData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000342C17500000000001 /* MiThoughtsDocumentData.swift */; };
 		1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */; };
 		1A0000372C17500000000001 /* CanvasSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000382C17500000000001 /* CanvasSummary.swift */; };
 		1A0001012C17500000000001 /* ItmzZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0001022C17500000000001 /* ItmzZip.swift */; };
@@ -40,14 +41,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1A0002112C17500000000001 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = Config/Base.xcconfig; sourceTree = "<group>"; };
+		1A0002122C17500000000001 /* MiThoughts.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MiThoughts.entitlements; sourceTree = "<group>"; };
+		1A0002102C17500000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A0002082C17500000000001 /* TaskManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskManagement.swift; sourceTree = "<group>"; };
 		1A0002062C17500000000001 /* OutlineFormatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineFormatService.swift; sourceTree = "<group>"; };
 		1A0002042C17500000000001 /* TopicStyleRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopicStyleRendering.swift; sourceTree = "<group>"; };
 		1A00020C2C17500000000001 /* MapWindowSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapWindowSupport.swift; sourceTree = "<group>"; };
 		1A0002022C17500000000001 /* ItmzExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzExportService.swift; sourceTree = "<group>"; };
-		1A0000022C17500000000001 /* MyThoughtsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsApp.swift; sourceTree = "<group>"; };
+		1A0000022C17500000000001 /* MiThoughtsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiThoughtsApp.swift; sourceTree = "<group>"; };
 		1A0000042C17500000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		1A0000052C17500000000001 /* MyThoughts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyThoughts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000052C17500000000001 /* MiThoughts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MiThoughts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000182C17500000000001 /* InfiniteCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfiniteCanvasView.swift; sourceTree = "<group>"; };
 		1A00001A2C17500000000001 /* CanvasNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasNode.swift; sourceTree = "<group>"; };
 		1A00001C2C17500000000001 /* NodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeStore.swift; sourceTree = "<group>"; };
@@ -63,7 +67,7 @@
 		1A00002E2C17500000000001 /* BuiltInTemplateFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuiltInTemplateFactory.swift; sourceTree = "<group>"; };
 		1A0000302C17500000000001 /* TemplateChooserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemplateChooserView.swift; sourceTree = "<group>"; };
 		1A0000322C17500000000001 /* StartScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StartScreenView.swift; sourceTree = "<group>"; };
-		1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyThoughtsDocumentData.swift; sourceTree = "<group>"; };
+		1A0000342C17500000000001 /* MiThoughtsDocumentData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiThoughtsDocumentData.swift; sourceTree = "<group>"; };
 		1A0000362C17500000000001 /* ConnectionLinePathBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLinePathBuilder.swift; sourceTree = "<group>"; };
 		1A0000382C17500000000001 /* CanvasSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSummary.swift; sourceTree = "<group>"; };
 		1A0001022C17500000000001 /* ItmzZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItmzZip.swift; sourceTree = "<group>"; };
@@ -87,28 +91,31 @@
 		1A0000072C17500000000001 = {
 			isa = PBXGroup;
 			children = (
-				1A0000082C17500000000001 /* MyThoughts */,
+				1A0002112C17500000000001 /* Base.xcconfig */,
+				1A0000082C17500000000001 /* MiThoughts */,
 				1A0001092C17500000000001 /* ItmzKit */,
 				1A0000092C17500000000001 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		1A0000082C17500000000001 /* MyThoughts */ = {
+		1A0000082C17500000000001 /* MiThoughts */ = {
 			isa = PBXGroup;
 			children = (
-				1A0000022C17500000000001 /* MyThoughtsApp.swift */,
+				1A0000022C17500000000001 /* MiThoughtsApp.swift */,
 				1A0000042C17500000000001 /* ContentView.swift */,
+				1A0002102C17500000000001 /* Assets.xcassets */,
+				1A0002122C17500000000001 /* MiThoughts.entitlements */,
 				1A00000A2C17500000000001 /* Views */,
 				1A00000B2C17500000000001 /* Models */,
 				1A00000C2C17500000000001 /* Utilities */,
 			);
-			path = MyThoughts;
+			path = MiThoughts;
 			sourceTree = "<group>";
 		};
 		1A0000092C17500000000001 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1A0000052C17500000000001 /* MyThoughts.app */,
+				1A0000052C17500000000001 /* MiThoughts.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -133,7 +140,7 @@
 				1A00001E2C17500000000001 /* CanvasConnection.swift */,
 				1A00020A2C17500000000001 /* MapStyle.swift */,
 				1A0000382C17500000000001 /* CanvasSummary.swift */,
-				1A0000342C17500000000001 /* MyThoughtsDocumentData.swift */,
+				1A0000342C17500000000001 /* MiThoughtsDocumentData.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -173,9 +180,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1A00000D2C17500000000001 /* MyThoughts */ = {
+		1A00000D2C17500000000001 /* MiThoughts */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MyThoughts" */;
+			buildConfigurationList = 1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MiThoughts" */;
 			buildPhases = (
 				1A00000F2C17500000000001 /* Sources */,
 				1A0000062C17500000000001 /* Frameworks */,
@@ -185,9 +192,9 @@
 			);
 			dependencies = (
 			);
-			name = MyThoughts;
-			productName = MyThoughts;
-			productReference = 1A0000052C17500000000001 /* MyThoughts.app */;
+			name = MiThoughts;
+			productName = MiThoughts;
+			productReference = 1A0000052C17500000000001 /* MiThoughts.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -205,7 +212,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 1A0000122C17500000000001 /* Build configuration list for PBXProject "MyThoughts" */;
+			buildConfigurationList = 1A0000122C17500000000001 /* Build configuration list for PBXProject "MiThoughts" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -218,7 +225,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1A00000D2C17500000000001 /* MyThoughts */,
+				1A00000D2C17500000000001 /* MiThoughts */,
 			);
 		};
 /* End PBXProject section */
@@ -228,6 +235,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A00020F2C17500000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,7 +246,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A0000012C17500000000001 /* MyThoughtsApp.swift in Sources */,
+				1A0000012C17500000000001 /* MiThoughtsApp.swift in Sources */,
 				1A0000032C17500000000001 /* ContentView.swift in Sources */,
 				1A0000172C17500000000001 /* InfiniteCanvasView.swift in Sources */,
 				1A0000192C17500000000001 /* CanvasNode.swift in Sources */,
@@ -260,7 +268,7 @@
 				1A00002D2C17500000000001 /* BuiltInTemplateFactory.swift in Sources */,
 				1A00002F2C17500000000001 /* TemplateChooserView.swift in Sources */,
 				1A0000312C17500000000001 /* StartScreenView.swift in Sources */,
-				1A0000332C17500000000001 /* MyThoughtsDocumentData.swift in Sources */,
+				1A0000332C17500000000001 /* MiThoughtsDocumentData.swift in Sources */,
 				1A0000352C17500000000001 /* ConnectionLinePathBuilder.swift in Sources */,
 				1A0000372C17500000000001 /* CanvasSummary.swift in Sources */,
 				1A0001012C17500000000001 /* ItmzZip.swift in Sources */,
@@ -390,30 +398,31 @@
 		};
 		1A0000152C17500000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0002112C17500000000001 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_ENTITLEMENTS = MiThoughts/MiThoughts.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MyThoughts/Info.plist;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
-				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;
+				INFOPLIST_FILE = MiThoughts/Info.plist;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MiThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "MiThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_CFBundleDisplayName = MiThoughts;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MiThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "MiThoughts needs access to Reminders to create reminders from selected topics.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MyThoughts;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.uwecheal.mythoughts;
+				PRODUCT_NAME = MiThoughts;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -421,30 +430,31 @@
 		};
 		1A0000162C17500000000001 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1A0002112C17500000000001 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_ENTITLEMENTS = MiThoughts/MiThoughts.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MyThoughts/Info.plist;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "MyThoughts needs access to Calendar to create events from selected topics.";
-				INFOPLIST_KEY_CFBundleDisplayName = MyThoughts;
+				INFOPLIST_FILE = MiThoughts/Info.plist;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "MiThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "MiThoughts needs access to Calendar to create events from selected topics.";
+				INFOPLIST_KEY_CFBundleDisplayName = MiThoughts;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "MyThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "MiThoughts needs access to Reminders to create reminders from selected topics.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "MiThoughts needs access to Reminders to create reminders from selected topics.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MyThoughts;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.uwecheal.mythoughts;
+				PRODUCT_NAME = MiThoughts;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -453,7 +463,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1A0000122C17500000000001 /* Build configuration list for PBXProject "MyThoughts" */ = {
+		1A0000122C17500000000001 /* Build configuration list for PBXProject "MiThoughts" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A0000132C17500000000001 /* Debug */,
@@ -462,7 +472,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MyThoughts" */ = {
+		1A00000E2C17500000000001 /* Build configuration list for PBXNativeTarget "MiThoughts" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A0000152C17500000000001 /* Debug */,

@@ -1,18 +1,18 @@
 import Foundation
 
-enum MyThoughtsDocumentType: String, Codable {
+enum MiThoughtsDocumentType: String, Codable {
     case fullMap
     case branch
 }
 
-struct MyThoughtsDocumentData: Codable {
+struct MiThoughtsDocumentData: Codable {
     static let currentFormatVersion = 1
 
     var formatVersion: Int
     var appName: String
     var createdAt: Date
     var updatedAt: Date
-    var documentType: MyThoughtsDocumentType
+    var documentType: MiThoughtsDocumentType
     var nodes: [CanvasNode]
     var connections: [CanvasConnection]
     var summaries: [CanvasSummary]
@@ -33,10 +33,10 @@ struct MyThoughtsDocumentData: Codable {
 
     init(
         formatVersion: Int = Self.currentFormatVersion,
-        appName: String = "MyThoughts",
+        appName: String = "MiThoughts",
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        documentType: MyThoughtsDocumentType = .fullMap,
+        documentType: MiThoughtsDocumentType = .fullMap,
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
@@ -61,10 +61,10 @@ struct MyThoughtsDocumentData: Codable {
 
     init(
         formatVersion: Int = Self.currentFormatVersion,
-        appName: String = "MyThoughts",
+        appName: String = "MiThoughts",
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        documentType: MyThoughtsDocumentType = .fullMap,
+        documentType: MiThoughtsDocumentType = .fullMap,
         nodes: [CanvasNode],
         connections: [CanvasConnection],
         summaries: [CanvasSummary] = [],
@@ -109,10 +109,10 @@ struct MyThoughtsDocumentData: Codable {
         let now = Date()
 
         formatVersion = try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? Self.currentFormatVersion
-        appName = try container.decodeIfPresent(String.self, forKey: .appName) ?? "MyThoughts"
+        appName = try container.decodeIfPresent(String.self, forKey: .appName) ?? "MiThoughts"
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? now
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? now
-        documentType = try container.decodeIfPresent(MyThoughtsDocumentType.self, forKey: .documentType) ?? .fullMap
+        documentType = try container.decodeIfPresent(MiThoughtsDocumentType.self, forKey: .documentType) ?? .fullMap
         nodes = try container.decodeIfPresent([CanvasNode].self, forKey: .nodes) ?? []
         connections = try container.decodeIfPresent([CanvasConnection].self, forKey: .connections) ?? []
         summaries = try container.decodeIfPresent([CanvasSummary].self, forKey: .summaries) ?? []
@@ -123,4 +123,4 @@ struct MyThoughtsDocumentData: Codable {
     }
 }
 
-typealias MyThoughtsDocument = MyThoughtsDocumentData
+typealias MiThoughtsDocument = MiThoughtsDocumentData

@@ -673,7 +673,7 @@ enum TopicImageImport {
         case unreadable
 
         var errorDescription: String? {
-            "The file is not an image MyThoughts can read."
+            "The file is not an image MiThoughts can read."
         }
     }
 

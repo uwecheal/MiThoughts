@@ -147,8 +147,17 @@ final class MapWindowRegistry {
     }
 
     /// Files that arrived while no map window existed each get a window now.
-    func openQueuedFilesIfNoWindow() {
-        guard entries.isEmpty, WindowOpener.action != nil else {
+    func openQueuedFilesIfNoWindow(attempt: Int = 0) {
+        guard entries.isEmpty else {
+            return
+        }
+        // At a cold launch the menu (and with it `openWindow`) may not exist yet: try again shortly.
+        guard WindowOpener.action != nil else {
+            if attempt < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    MainActor.assumeIsolated { self.openQueuedFilesIfNoWindow(attempt: attempt + 1) }
+                }
+            }
             return
         }
         for url in ExternalOpenQueue.takeAll() {
@@ -161,12 +170,19 @@ final class MapWindowRegistry {
 
     /// SwiftUI drops `openWindow` calls made in quick succession, so new windows
     /// are opened one at a time.
-    private func openInNewWindow(_ url: URL) {
+    private func openInNewWindow(_ url: URL, attempt: Int = 0) {
         guard !windowsToOpen.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) else {
             return
         }
         windowsToOpen.append(url)
+        windowAttempts[url.standardizedFileURL] = attempt
         openNextWindow()
+    }
+
+    private var windowAttempts: [URL: Int] = [:]
+
+    private func hasWindow(for url: URL) -> Bool {
+        entries.contains { $0.fileURL()?.standardizedFileURL == url.standardizedFileURL }
     }
 
     private func openNextWindow() {
@@ -183,6 +199,17 @@ final class MapWindowRegistry {
                     existing.windowRef.window?.makeKeyAndOrderFront(nil)
                 } else {
                     openWindow(value: url)
+                    // SwiftUI can drop the request during launch: check, and ask again if no window came.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        MainActor.assumeIsolated {
+                            let key = url.standardizedFileURL
+                            let attempt = self.windowAttempts[key] ?? 0
+                            self.windowAttempts[key] = nil
+                            if !self.hasWindow(for: url), attempt < 3 {
+                                self.openInNewWindow(url, attempt: attempt + 1)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -198,16 +225,24 @@ final class MapWindowRegistry {
         guard let entry = entries.first(where: { $0.id == windowID }) else {
             return true
         }
-        // The autosaving window keeps its map across launches, as before.
-        guard !entry.ownsAutosave, entry.isDirty() else {
+        guard needsSaveOnClose(entry) else {
             return true
         }
         return entry.confirmClose()
     }
 
+    /// A changed map with a file is saved on close. A new, never-saved map in the
+    /// autosaving window is kept by the crash-safe autosave instead, as before.
+    private func needsSaveOnClose(_ entry: Entry) -> Bool {
+        guard entry.isDirty() else {
+            return false
+        }
+        return !entry.ownsAutosave || entry.fileURL() != nil
+    }
+
     /// Before quitting: every window with unsaved changes that autosave does not cover asks once.
     func confirmQuit() -> Bool {
-        for entry in entries where !entry.ownsAutosave && entry.isDirty() {
+        for entry in entries where needsSaveOnClose(entry) {
             entry.windowRef.window?.makeKeyAndOrderFront(nil)
             if !entry.confirmClose() {
                 return false
@@ -276,6 +311,7 @@ enum WindowOpener {
 /// What the crash-safe autosave holds: only unsaved work is brought back at launch,
 /// so the app no longer reopens a stale map every time it starts.
 enum AutosaveInfo {
+    // Storage keys keep the app's earlier name (MyThoughts) so existing settings carry over.
     private static let unsavedKey = "MyThoughts.autosave.hasUnsavedChanges"
     private static let sourceKey = "MyThoughts.autosave.sourceFile"
 

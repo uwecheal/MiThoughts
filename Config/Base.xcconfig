@@ -1,0 +1,4 @@
+// Shared build settings. Signing details stay in a local file that is not
+// committed (the repository is public): create Config/Signing.local.xcconfig with
+//     DEVELOPMENT_TEAM = <your team ID>
+#include? "Signing.local.xcconfig"
