@@ -1,5 +1,11 @@
-import AppKit
 import SwiftUI
+import ImageIO
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+import UniformTypeIdentifiers
+#endif
 
 // MARK: - Colours
 
@@ -52,12 +58,12 @@ enum TopicColor {
     }
 
     static func hex(from color: Color) -> String? {
-        guard let rgb = NSColor(color).usingColorSpace(.sRGB) else {
+        guard let rgb = PlatformColor.srgbComponents(of: color) else {
             return nil
         }
-        let red = Int((rgb.redComponent * 255).rounded())
-        let green = Int((rgb.greenComponent * 255).rounded())
-        let blue = Int((rgb.blueComponent * 255).rounded())
+        let red = Int((rgb.red * 255).rounded())
+        let green = Int((rgb.green * 255).rounded())
+        let blue = Int((rgb.blue * 255).rounded())
         return String(format: "%02X%02X%02X", red, green, blue)
     }
 
@@ -264,9 +270,9 @@ enum TopicText {
 // MARK: - Images
 
 enum TopicImageCache {
-    private static var images: [UUID: (data: Data, image: NSImage)] = [:]
+    private static var images: [UUID: (data: Data, image: PlatformImage)] = [:]
 
-    static func image(for nodeID: UUID, data: Data?) -> NSImage? {
+    static func image(for nodeID: UUID, data: Data?) -> PlatformImage? {
         guard let data else {
             images[nodeID] = nil
             return nil
@@ -274,7 +280,7 @@ enum TopicImageCache {
         if let cached = images[nodeID], cached.data == data {
             return cached.image
         }
-        guard let image = NSImage(data: data) else {
+        guard let image = PlatformImage(data: data) else {
             return nil
         }
         images[nodeID] = (data, image)
@@ -643,13 +649,14 @@ struct RelationshipMenuItem: Identifiable {
 }
 
 extension TopicColor {
-    private static var swatches: [String: NSImage] = [:]
+    private static var swatches: [String: PlatformImage] = [:]
 
     /// A small non-template colour dot for menus.
-    static func swatch(_ hex: String) -> NSImage {
+    static func swatch(_ hex: String) -> PlatformImage {
         if let cached = swatches[hex] {
             return cached
         }
+        #if os(macOS)
         let size = NSSize(width: 12, height: 12)
         let image = NSImage(size: size, flipped: false) { rect in
             let path = NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
@@ -663,6 +670,19 @@ extension TopicColor {
             return true
         }
         image.isTemplate = false
+        #else
+        let size = CGSize(width: 12, height: 12)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            let path = UIBezierPath(ovalIn: CGRect(origin: .zero, size: size).insetBy(dx: 0.5, dy: 0.5))
+            if let rgb = components(hex) {
+                UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1).setFill()
+            }
+            path.fill()
+            UIColor.black.withAlphaComponent(0.25).setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }.withRenderingMode(.alwaysOriginal)
+        #endif
         swatches[hex] = image
         return image
     }
@@ -681,6 +701,7 @@ enum TopicImageImport {
     /// JPEG/PNG so maps stay small; small ones are kept byte-for-byte.
     static func prepare(contentsOf url: URL) throws -> (data: Data, name: String) {
         let data = try Data(contentsOf: url)
+        #if os(macOS)
         guard let image = NSImage(data: data),
               let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first
                 ?? NSBitmapImageRep(data: image.tiffRepresentation ?? Data()) else {
@@ -718,5 +739,46 @@ enum TopicImageImport {
             throw ImportError.unreadable
         }
         return (jpeg, "\(stem).jpg")
+        #else
+        return try prepareWithImageIO(data: data, url: url)
+        #endif
     }
+
+    #if !os(macOS)
+    private static func prepareWithImageIO(data: Data, url: URL) throws -> (data: Data, name: String) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let pixelHeight = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+            throw ImportError.unreadable
+        }
+        let maximum: CGFloat = 1200
+        let fileName = url.lastPathComponent
+        let knownFormat = ["png", "jpg", "jpeg", "gif"].contains(url.pathExtension.lowercased())
+        if knownFormat && max(pixelWidth, pixelHeight) <= maximum && data.count <= 1_500_000 {
+            return (data, fileName)
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(min(maximum, max(pixelWidth, pixelHeight)))
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            throw ImportError.unreadable
+        }
+        let hasAlpha = (properties[kCGImagePropertyHasAlpha] as? Bool) ?? false
+        let stem = url.deletingPathExtension().lastPathComponent
+        let output = NSMutableData()
+        let type = hasAlpha ? UTType.png : UTType.jpeg
+        guard let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil) else {
+            throw ImportError.unreadable
+        }
+        let destinationOptions: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: 0.85]
+        CGImageDestinationAddImage(destination, thumbnail, destinationOptions as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ImportError.unreadable
+        }
+        return (output as Data, hasAlpha ? "\(stem).png" : "\(stem).jpg")
+    }
+    #endif
 }

@@ -22,6 +22,8 @@
 		1A00001D2C17500000000001 /* CanvasConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A00001E2C17500000000001 /* CanvasConnection.swift */; };
 		1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000202C17500000000001 /* AppleIntegrationService.swift */; };
 		1A0000212C17500000000001 /* MapValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000222C17500000000001 /* MapValidator.swift */; };
+		1A0009000000000000000002 /* PlatformSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0009000000000000000001 /* PlatformSupport.swift */; };
+		1A0009000000000000000004 /* FilePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0009000000000000000003 /* FilePanel.swift */; };
 		1A0000232C17500000000001 /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000242C17500000000001 /* HistoryManager.swift */; };
 		1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000262C17500000000001 /* IThoughtsImportService.swift */; };
 		1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000282C17500000000001 /* MapExportRenderer.swift */; };
@@ -59,6 +61,8 @@
 		1A00001E2C17500000000001 /* CanvasConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasConnection.swift; sourceTree = "<group>"; };
 		1A0000202C17500000000001 /* AppleIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntegrationService.swift; sourceTree = "<group>"; };
 		1A0000222C17500000000001 /* MapValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapValidator.swift; sourceTree = "<group>"; };
+		1A0009000000000000000001 /* PlatformSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformSupport.swift; sourceTree = "<group>"; };
+		1A0009000000000000000003 /* FilePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePanel.swift; sourceTree = "<group>"; };
 		1A0000242C17500000000001 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
 		1A0000262C17500000000001 /* IThoughtsImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IThoughtsImportService.swift; sourceTree = "<group>"; };
 		1A0000282C17500000000001 /* MapExportRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapExportRenderer.swift; sourceTree = "<group>"; };
@@ -152,6 +156,8 @@
 				1A0000202C17500000000001 /* AppleIntegrationService.swift */,
 				1A0000222C17500000000001 /* MapValidator.swift */,
 				1A0000242C17500000000001 /* HistoryManager.swift */,
+				1A0009000000000000000003 /* FilePanel.swift */,
+				1A0009000000000000000001 /* PlatformSupport.swift */,
 				1A0000262C17500000000001 /* IThoughtsImportService.swift */,
 				1A0000282C17500000000001 /* MapExportRenderer.swift */,
 				1A0002022C17500000000001 /* ItmzExportService.swift */,
@@ -256,6 +262,8 @@
 				1A00001F2C17500000000001 /* AppleIntegrationService.swift in Sources */,
 				1A0000212C17500000000001 /* MapValidator.swift in Sources */,
 				1A0000232C17500000000001 /* HistoryManager.swift in Sources */,
+				1A0009000000000000000004 /* FilePanel.swift in Sources */,
+				1A0009000000000000000002 /* PlatformSupport.swift in Sources */,
 				1A0000252C17500000000001 /* IThoughtsImportService.swift in Sources */,
 				1A0000272C17500000000001 /* MapExportRenderer.swift in Sources */,
 				1A0002012C17500000000001 /* ItmzExportService.swift in Sources */,
@@ -401,12 +409,34 @@
 			baseConfigurationReference = 1A0002112C17500000000001 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MiThoughts/MiThoughts.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = MiThoughts/MiThoughts.entitlements;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				"LD_RUNPATH_SEARCH_PATHS[sdk=iphone*]" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=xr*]" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.0;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MiThoughts/Info.plist;
@@ -433,12 +463,34 @@
 			baseConfigurationReference = 1A0002112C17500000000001 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MiThoughts/MiThoughts.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = MiThoughts/MiThoughts.entitlements;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				"LD_RUNPATH_SEARCH_PATHS[sdk=iphone*]" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=xr*]" = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 1.0;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_ASSET_PATHS = "";
-				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MiThoughts/Info.plist;

@@ -20,7 +20,7 @@ struct StartScreenView: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            Color.platformWindowBackground
                 .ignoresSafeArea()
 
             HStack(spacing: 36) {

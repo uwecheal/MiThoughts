@@ -71,6 +71,9 @@
 			</dict>
 		</dict>
 	</array>
+	<!-- iPad / iPhone: the app's own folder appears in Files ("On My iPad › MiThoughts"). Ignored on the Mac. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSHumanReadableCopyright</key>

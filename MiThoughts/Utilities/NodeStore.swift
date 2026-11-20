@@ -124,6 +124,17 @@ enum MiThoughtsViewCommand {
     static let createEvent = Notification.Name("MiThoughtsViewCommand.createEvent")
 }
 
+/// Editing actions for the iPad toolbar (on the Mac these are keys: Tab, Return, Delete, ⌘Z).
+enum MiThoughtsEditCommand {
+    static let addChild = Notification.Name("MiThoughtsEditCommand.addChild")
+    static let addSibling = Notification.Name("MiThoughtsEditCommand.addSibling")
+    static let editTitle = Notification.Name("MiThoughtsEditCommand.editTitle")
+    static let showDetails = Notification.Name("MiThoughtsEditCommand.showDetails")
+    static let delete = Notification.Name("MiThoughtsEditCommand.delete")
+    static let undo = Notification.Name("MiThoughtsEditCommand.undo")
+    static let redo = Notification.Name("MiThoughtsEditCommand.redo")
+}
+
 enum BranchOperation {
     case select
     case collapse
@@ -166,7 +177,7 @@ enum RecentFilesStore {
         var isStale = false
         guard let resolved = try? URL(
             resolvingBookmarkData: data,
-            options: [.withSecurityScope],
+            options: securityScopedResolution,
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         ) else {
@@ -175,12 +186,22 @@ enum RecentFilesStore {
         if resolved.startAccessingSecurityScopedResource() {
             accessedPaths.insert(path)
         }
-        if isStale, let fresh = try? resolved.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) {
+        if isStale, let fresh = try? resolved.bookmarkData(options: securityScopedCreation, includingResourceValuesForKeys: nil, relativeTo: nil) {
             bookmarks[path] = fresh
             UserDefaults.standard.set(bookmarks, forKey: bookmarksKey)
         }
         return resolved
     }
+
+    // On iPad a bookmark of a file picked in Files already carries its access; there is no
+    // separate security scope option.
+    #if os(macOS)
+    private static let securityScopedResolution: URL.BookmarkResolutionOptions = [.withSecurityScope]
+    private static let securityScopedCreation: URL.BookmarkCreationOptions = [.withSecurityScope]
+    #else
+    private static let securityScopedResolution: URL.BookmarkResolutionOptions = []
+    private static let securityScopedCreation: URL.BookmarkCreationOptions = []
+    #endif
 
     static func load() -> [URL] {
         let paths = UserDefaults.standard.stringArray(forKey: userDefaultsKey) ?? []
@@ -195,7 +216,7 @@ enum RecentFilesStore {
         save(urls)
 
         var bookmarks = UserDefaults.standard.dictionary(forKey: bookmarksKey) as? [String: Data] ?? [:]
-        if let data = (try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil))
+        if let data = (try? url.bookmarkData(options: securityScopedCreation, includingResourceValuesForKeys: nil, relativeTo: nil))
             ?? (try? url.bookmarkData()) {
             bookmarks[standardizedURL.path] = data
         }

@@ -24,6 +24,7 @@ enum ExternalOpenQueue {
     }
 }
 
+#if os(macOS)
 final class MiThoughtsAppDelegate: NSObject, NSApplicationDelegate {
     /// Finder double-click, "Open With", drop on the Dock icon: each file gets its
     /// own window (or comes forward if it is already open).
@@ -53,13 +54,17 @@ final class MiThoughtsAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+#endif
 
 @main
 struct MiThoughtsApp: App {
+    #if os(macOS)
     @NSApplicationDelegateAdaptor(MiThoughtsAppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
         // One window per map; windows can also be merged into tabs (Window ▸ Merge All Windows).
+        #if os(macOS)
         WindowGroup("MiThoughts", id: MapWindowID.map, for: URL.self) { $fileURL in
             ContentView(fileURL: $fileURL)
                 .frame(minWidth: 720, minHeight: 480)
@@ -68,6 +73,18 @@ struct MiThoughtsApp: App {
         .commands {
             MiThoughtsCommands()
         }
+        #else
+        // iPad: one map per window (Stage Manager / Split View); files from the Files app arrive here.
+        WindowGroup("MiThoughts", id: MapWindowID.map, for: URL.self) { $fileURL in
+            ContentView(fileURL: $fileURL)
+                .onOpenURL { url in
+                    MapWindowRegistry.shared.open(url)
+                }
+        }
+        .commands {
+            MiThoughtsCommands()
+        }
+        #endif
     }
 }
 
