@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 
 struct MapExportPayload {
@@ -33,6 +37,7 @@ enum MapExportRenderer {
         return contentBounds.insetBy(dx: -contentPadding, dy: -contentPadding)
     }
 
+    #if os(macOS)
     static func writePDF(payload: MapExportPayload, to url: URL) throws {
         let bounds = exportBounds(for: payload.nodes)
         let pageSize = pageSize(for: bounds)
@@ -95,6 +100,70 @@ enum MapExportRenderer {
         operation.run()
     }
 
+    #else
+    @MainActor
+    static func writePDF(payload: MapExportPayload, to url: URL) throws {
+        try pdfData(payload: payload).write(to: url, options: .atomic)
+    }
+
+    @MainActor
+    static func pdfData(payload: MapExportPayload) throws -> Data {
+        let bounds = exportBounds(for: payload.nodes)
+        let pageSize = pageSize(for: bounds)
+        let renderer = ImageRenderer(
+            content: MapExportPageView(payload: payload, bounds: bounds, pageSize: pageSize)
+                .frame(width: pageSize.width, height: pageSize.height)
+        )
+        let data = NSMutableData()
+        var failed = true
+        renderer.render { size, draw in
+            var box = CGRect(origin: .zero, size: size)
+            guard let consumer = CGDataConsumer(data: data as CFMutableData),
+                  let context = CGContext(consumer: consumer, mediaBox: &box, nil) else {
+                return
+            }
+            context.beginPDFPage(nil)
+            draw(context)
+            context.endPDFPage()
+            context.closePDF()
+            failed = false
+        }
+        if failed {
+            throw MapExportError.renderingFailed
+        }
+        return data as Data
+    }
+
+    @MainActor
+    static func writePNG(payload: MapExportPayload, to url: URL) throws -> MapExportResult {
+        let bounds = exportBounds(for: payload.nodes)
+        let scale = pngScale(for: bounds.size)
+        let renderer = ImageRenderer(
+            content: MapExportContentView(payload: payload, bounds: bounds)
+                .frame(width: bounds.width, height: bounds.height)
+        )
+        renderer.scale = scale
+        guard let data = renderer.uiImage?.pngData() else {
+            throw MapExportError.renderingFailed
+        }
+        try data.write(to: url, options: .atomic)
+        let warning = scale < 2
+            ? "PNG export was capped to keep the image size safe for large maps."
+            : nil
+        return MapExportResult(warning: warning)
+    }
+
+    @MainActor
+    static func print(payload: MapExportPayload) {
+        guard let data = try? pdfData(payload: payload) else {
+            return
+        }
+        let controller = UIPrintInteractionController.shared
+        controller.printingItem = data
+        controller.present(animated: true)
+    }
+    #endif
+
     private static func rect(for node: CanvasNode) -> CGRect {
         CGRect(x: node.x, y: node.y, width: node.width, height: node.height)
     }
@@ -115,12 +184,14 @@ enum MapExportRenderer {
         return min(2, max(0.5, min(widthScale, heightScale)))
     }
 
+    #if os(macOS)
     private static func hostingView<Content: View>(for content: Content, size: CGSize) -> NSHostingView<AnyView> {
         let view = NSHostingView(rootView: AnyView(content.frame(width: size.width, height: size.height)))
         view.frame = CGRect(origin: .zero, size: size)
         view.layoutSubtreeIfNeeded()
         return view
     }
+    #endif
 }
 
 enum MapExportError: LocalizedError {
@@ -505,8 +576,8 @@ private struct ExportNodeView: View {
         return colors.nodeText
     }
 
-    private var image: NSImage? {
-        node.style.imageData.flatMap { NSImage(data: $0) }
+    private var image: PlatformImage? {
+        node.style.imageData.flatMap { PlatformImage(data: $0) }
     }
 
     private var imageSize: CGSize {
@@ -552,7 +623,7 @@ private struct ExportNodeView: View {
 
             VStack(spacing: 4) {
                 if let image {
-                    Image(nsImage: image)
+                    Image(platformImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: imageSize.width, height: imageSize.height)

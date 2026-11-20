@@ -461,7 +461,11 @@ struct TaskListPanelView: View {
                 }
                 .frame(maxWidth: 160)
                 Toggle("Completed", isOn: $showCompleted)
+                    #if os(macOS)
                     .toggleStyle(.checkbox)
+                    #else
+                    .toggleStyle(.button)
+                    #endif
             }
             .controlSize(.small)
 

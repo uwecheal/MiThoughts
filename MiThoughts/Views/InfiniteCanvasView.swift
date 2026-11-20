@@ -1,5 +1,9 @@
 import SwiftUI
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import Combine
 import UniformTypeIdentifiers
 
@@ -557,6 +561,7 @@ struct InfiniteCanvasView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            #if os(macOS)
             .background(
                 KeyboardEventMonitor(eventMask: [.keyDown, .scrollWheel]) { event in
                     if event.type == .scrollWheel {
@@ -570,9 +575,10 @@ struct InfiniteCanvasView: View {
                     if event.window === windowRef.window {
                         CanvasPointer.hide()
                     }
-                    return handleKeyEvent(event)
+                    return handleKeyEvent(CanvasKeyEvent(event))
                 }
             )
+            #endif
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .coordinateSpace(name: "canvasScreen")
@@ -582,6 +588,15 @@ struct InfiniteCanvasView: View {
             .simultaneousGesture(canvasDoubleClickGesture)
             .focusable()
             .focused($isCanvasFocused)
+            #if !os(macOS)
+            // iPad hardware keyboard: the same keys as on the Mac.
+            .onKeyPress(phases: [.down, .repeat]) { press in
+                guard let event = CanvasKeyEvent(press) else {
+                    return .ignored
+                }
+                return handleKeyEvent(event) ? .handled : .ignored
+            }
+            #endif
             .background(
                 WindowAccessor { window in
                     // Keep the window even if it arrives before the canvas has registered
@@ -610,8 +625,8 @@ struct InfiniteCanvasView: View {
                             $0.fileURL()?.standardizedFileURL == target
                         }
                         if let firstOwner, firstOwner.id != windowID {
-                            firstOwner.windowRef.window?.makeKeyAndOrderFront(nil)
-                            windowRef.window?.close()
+                            firstOwner.windowRef.window?.bringMapToFront()
+                            windowRef.window?.closeMapWindow()
                             return
                         }
                         openMiThoughtsFile(at: url)
@@ -730,7 +745,7 @@ struct InfiniteCanvasView: View {
                 updateAppearance { $0.taskDisplay.hideCompletedTasks.toggle() }
                 refreshDerivedData()
             }
-            .onReceive(commandPublisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            .onReceive(commandPublisher(for: PlatformNotifications.didBecomeActive)) { _ in
                 syncWithApple(isAutomatic: true)
             }
             .onReceive(commandPublisher(for: MiThoughtsViewCommand.toggleNotes)) { _ in
@@ -778,6 +793,26 @@ struct InfiniteCanvasView: View {
                     performBranchOperationOnSelected(operation)
                 }
             }
+            .modifier(EditCommandReceivers(
+                isActive: { MapWindowRegistry.shared.isActive(windowID) },
+                addChild: { createChildForSelectedNode() },
+                addSibling: { createSiblingForSelectedNode() },
+                editTitle: {
+                    guard let selectedNodeID else {
+                        return
+                    }
+                    recordUndoSnapshot()
+                    editingNodeID = selectedNodeID
+                },
+                showDetails: {
+                    if let selectedNodeID {
+                        openDetails(for: selectedNodeID)
+                    }
+                },
+                delete: { deleteSelectedNode() },
+                undo: { performUndo() },
+                redo: { performRedo() }
+            ))
         }
     }
 
@@ -960,8 +995,11 @@ struct InfiniteCanvasView: View {
             .onChanged { value in
                 if activePanIsAllowed == nil {
                     let startsOnEmptyCanvas = !isDraggingNode && node(at: screenToCanvasPosition(value.startLocation)) == nil
-                    let flags = NSApp.currentEvent?.modifierFlags ?? []
-                    if startsOnEmptyCanvas && !flags.contains(.option) && relationshipSourceID == nil {
+                    let flags = PlatformModifiers.current
+                    let wantsSelectionBox = PlatformModifiers.dragOnEmptyCanvasSelects
+                        ? !flags.contains(.option)
+                        : flags.contains(.command) || flags.contains(.shift)
+                    if startsOnEmptyCanvas && wantsSelectionBox && relationshipSourceID == nil {
                         isMarqueeSelecting = true
                         marqueeBaseSelection = flags.contains(.command) || flags.contains(.shift) ? selectedNodeIDs : []
                         editingNodeID = nil
@@ -1021,6 +1059,7 @@ struct InfiniteCanvasView: View {
         noteHistoryNodeID = nil
     }
 
+    #if os(macOS)
     /// Two-finger scroll pans the canvas; ⌘-scroll zooms. Scrolling over lists,
     /// notes and other scrollable panels is left to them.
     private func handleScrollEvent(_ event: NSEvent) -> Bool {
@@ -1054,6 +1093,7 @@ struct InfiniteCanvasView: View {
         CanvasPointer.hide()
         return true
     }
+    #endif
 
     private var zoomGesture: some Gesture {
         MagnificationGesture()
@@ -1431,19 +1471,17 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        let alert = NSAlert()
-        alert.messageText = "Delete this branch and all child nodes?"
-        alert.informativeText = "This will remove the selected node, its descendants, and related connections."
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            focusCanvas()
-            return
+        FilePanel.ask(
+            "Delete this branch and all child nodes?",
+            message: "This will remove the selected node, its descendants, and related connections.",
+            choices: [.init(title: "Delete", role: .destructive), .init(title: "Cancel", role: .cancel)]
+        ) { choice in
+            guard choice == 0 else {
+                focusCanvas()
+                return
+            }
+            deleteBranchWithoutPrompt(rootID: rootID)
         }
-
-        deleteBranchWithoutPrompt(rootID: rootID)
     }
 
     private func deleteBranchWithoutPrompt(rootID: CanvasNode.ID) {
@@ -1516,28 +1554,29 @@ struct InfiniteCanvasView: View {
 
         // An old-format iThoughts map opened untitled is saved as a current .itmz by default.
         let isITMZ = isITMZFile(currentFileURL) || (currentFileURL == nil && itmzSession != nil)
-        let savePanel = NSSavePanel()
-        savePanel.title = "Save Map"
-        savePanel.message = "Save as .itmz to stay compatible with iThoughts, or .MiThoughts for MiThoughts-only features."
         let defaultExtension = isITMZ ? ItmzExportService.fileExtension : MiThoughtsDocumentService.fileExtension
-        savePanel.nameFieldStringValue = currentFileURL?.lastPathComponent ?? "\(suggestedMapFileName).\(defaultExtension)"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = isITMZ
-            ? [iThoughtsDocumentContentType, myThoughtsDocumentContentType]
-            : [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
+        var saved = false
+        FilePanel.pickSaveURL(
+            title: "Save Map",
+            message: "Save as .itmz to stay compatible with iThoughts, or .MiThoughts for MiThoughts-only features.",
+            suggestedName: currentFileURL?.lastPathComponent ?? "\(suggestedMapFileName).\(defaultExtension)",
+            types: isITMZ
+                ? [iThoughtsDocumentContentType, myThoughtsDocumentContentType]
+                : [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard savePanel.runModal() == .OK,
-              var url = savePanel.url else {
-            focusCanvas()
-            return false
+            if !MiThoughtsDocumentService.isDocumentFile(url) && !isITMZFile(url) {
+                url.appendPathExtension(defaultExtension)
+            }
+            url = MiThoughtsDocumentService.preferredSpelling(of: url)
+
+            saved = saveCurrentMap(to: url, shouldUpdateCurrentFile: true)
         }
-
-        if !MiThoughtsDocumentService.isDocumentFile(url) && !isITMZFile(url) {
-            url.appendPathExtension(defaultExtension)
-        }
-        url = MiThoughtsDocumentService.preferredSpelling(of: url)
-
-        return saveCurrentMap(to: url, shouldUpdateCurrentFile: true)
+        return saved
     }
 
     @discardableResult
@@ -1586,23 +1625,20 @@ struct InfiniteCanvasView: View {
     private func openMiThoughtsFile() {
         isShowingAppearancePopover = false
 
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Open Map"
-        openPanel.message = "Open a MiThoughts (.MiThoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline."
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-        openPanel.allowedContentTypes = [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
-            + OutlineFormat.importExtensions.compactMap { UTType(filenameExtension: $0) }
+        FilePanel.pickFile(
+            title: "Open Map",
+            message: "Open a MiThoughts (.MiThoughts) or iThoughts (.itmz) map, or an OPML, Markdown or FreeMind outline.",
+            types: [myThoughtsDocumentContentType, iThoughtsDocumentContentType]
+                + OutlineFormat.importExtensions.compactMap { UTType(filenameExtension: $0) }
+        ) { picked in
+            guard let url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard openPanel.runModal() == .OK,
-              let url = openPanel.url else {
-            focusCanvas()
-            return
+            // Opens in this window when it is empty, otherwise in a window of its own.
+            MapWindowRegistry.shared.open(url)
         }
-
-        // Opens in this window when it is empty, otherwise in a window of its own.
-        MapWindowRegistry.shared.open(url)
     }
 
     private func openRecentFile(_ url: URL) {
@@ -1649,7 +1685,7 @@ struct InfiniteCanvasView: View {
 
     @discardableResult
     private func newMap() -> Bool {
-        guard confirmUnsavedChangesIfNeeded() else {
+        guard confirmUnsavedChangesIfNeeded(retry: { newMap() }) else {
             focusCanvas()
             return false
         }
@@ -1688,7 +1724,7 @@ struct InfiniteCanvasView: View {
     private func showTemplateChooser() {
         isShowingAppearancePopover = false
 
-        guard confirmUnsavedChangesIfNeeded() else {
+        guard confirmUnsavedChangesIfNeeded(retry: { isShowingTemplateChooser = true }) else {
             focusCanvas()
             return
         }
@@ -1701,7 +1737,7 @@ struct InfiniteCanvasView: View {
         detailsNodeID = nil
         isShowingSearchPanel = false
 
-        guard confirmUnsavedChangesIfNeeded() else {
+        guard confirmUnsavedChangesIfNeeded(retry: { showStartScreen() }) else {
             focusCanvas()
             return
         }
@@ -1825,7 +1861,9 @@ struct InfiniteCanvasView: View {
 
     /// Before the map is closed or replaced: a map that has a file is saved to it
     /// without asking (as iThoughts does); only a new, never-saved map asks.
-    private func confirmUnsavedChangesIfNeeded() -> Bool {
+    ///
+    /// On iPad the question cannot block: it returns false and runs `retry` once answered.
+    private func confirmUnsavedChangesIfNeeded(retry: (() -> Void)? = nil) -> Bool {
         guard isDirty else {
             return true
         }
@@ -1837,31 +1875,39 @@ struct InfiniteCanvasView: View {
             return saved
         }
 
-        let alert = NSAlert()
-        alert.messageText = "Save this new map?"
-        alert.informativeText = "It has not been saved to a file yet. If you don't save it, your changes will be lost."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don't Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return saveCurrentFile()
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
+        var answer: Bool?
+        FilePanel.ask(
+            "Save this new map?",
+            message: "It has not been saved to a file yet. If you don't save it, your changes will be lost.",
+            choices: [.init(title: "Save"), .init(title: "Don't Save", role: .destructive), .init(title: "Cancel", role: .cancel)]
+        ) { choice in
+            switch choice {
+            case 0:
+                #if os(macOS)
+                answer = saveCurrentFile()
+                #else
+                // Saving on iPad finishes later; the user repeats the action afterwards.
+                _ = saveCurrentFile()
+                #endif
+            case 1:
+                if answer == nil, let retry {
+                    // iPad: answered after the call returned; go ahead without saving.
+                    isDirty = false
+                    retry()
+                }
+                answer = true
+            default:
+                answer = false
+            }
         }
+        return answer ?? false
     }
 
     private func updateWindowTitle() {
         let window = windowRef.window
         guard !isShowingStartScreen else {
             DispatchQueue.main.async {
-                window?.title = "MiThoughts"
-                window?.representedURL = nil
-                window?.isDocumentEdited = false
+                window?.showMapTitle("MiThoughts", fileURL: nil, edited: false)
             }
             return
         }
@@ -1877,51 +1923,48 @@ struct InfiniteCanvasView: View {
         let fileURL = currentFileURL
         let edited = isDirty
         DispatchQueue.main.async {
-            window?.title = title
-            window?.representedURL = fileURL
-            window?.isDocumentEdited = edited
+            window?.showMapTitle(title, fileURL: fileURL, edited: edited)
         }
     }
 
     private func exportMiThoughtsFile() {
         isShowingAppearancePopover = false
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export MiThoughts File"
-        savePanel.nameFieldStringValue = "MiThoughts.\(MiThoughtsDocumentService.fileExtension)"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [myThoughtsDocumentContentType]
+        FilePanel.pickSaveURL(
+            title: "Export MiThoughts File",
+            suggestedName: "MiThoughts.\(MiThoughtsDocumentService.fileExtension)",
+            types: [myThoughtsDocumentContentType]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard savePanel.runModal() == .OK,
-              var url = savePanel.url else {
+            if !MiThoughtsDocumentService.isDocumentFile(url) {
+                url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
+            }
+            url = MiThoughtsDocumentService.preferredSpelling(of: url)
+
+            do {
+                try MiThoughtsDocumentService.export(
+                    nodes: nodes,
+                    connections: connections,
+                    summaries: summaries,
+                    relationships: relationships,
+                    canvasSettings: appearance,
+                    notePanelSettings: notePanelSettings,
+                    createdAt: documentCreatedAt,
+                    to: url
+                )
+                print("MiThoughts export: saved document to \(url.path).")
+                logStatus("Exported MiThoughts file.")
+            } catch {
+                print("MiThoughts export: failed to save document: \(error).")
+                showStatusMessage("Could not export MiThoughts file: \(error.localizedDescription)")
+            }
+
             focusCanvas()
-            return
         }
-
-        if !MiThoughtsDocumentService.isDocumentFile(url) {
-            url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
-        }
-        url = MiThoughtsDocumentService.preferredSpelling(of: url)
-
-        do {
-            try MiThoughtsDocumentService.export(
-                nodes: nodes,
-                connections: connections,
-                summaries: summaries,
-                relationships: relationships,
-                canvasSettings: appearance,
-                notePanelSettings: notePanelSettings,
-                createdAt: documentCreatedAt,
-                to: url
-            )
-            print("MiThoughts export: saved document to \(url.path).")
-            logStatus("Exported MiThoughts file.")
-        } catch {
-            print("MiThoughts export: failed to save document: \(error).")
-            showStatusMessage("Could not export MiThoughts file: \(error.localizedDescription)")
-        }
-
-        focusCanvas()
     }
 
     private func exportSelectedBranchFile() {
@@ -1941,110 +1984,107 @@ struct InfiniteCanvasView: View {
             branchNodeIDs.contains(connection.toNodeID)
         }
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export Selected Branch"
-        savePanel.nameFieldStringValue = "MiThoughts Branch.\(MiThoughtsDocumentService.fileExtension)"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [myThoughtsDocumentContentType]
+        FilePanel.pickSaveURL(
+            title: "Export Selected Branch",
+            suggestedName: "MiThoughts Branch.\(MiThoughtsDocumentService.fileExtension)",
+            types: [myThoughtsDocumentContentType]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard savePanel.runModal() == .OK,
-              var url = savePanel.url else {
+            if !MiThoughtsDocumentService.isDocumentFile(url) {
+                url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
+            }
+            url = MiThoughtsDocumentService.preferredSpelling(of: url)
+
+            do {
+                try MiThoughtsDocumentService.export(
+                    nodes: branchNodes,
+                    connections: branchConnections,
+                    summaries: branchSummaries(from: fragment, exportedNodeIDs: branchNodeIDs),
+                    canvasSettings: appearance,
+                    notePanelSettings: notePanelSettings,
+                    documentType: .branch,
+                    metadata: [
+                        "exportedNodeCount": "\(branchNodes.count)",
+                        "exportedConnectionCount": "\(branchConnections.count)"
+                    ],
+                    createdAt: Date(),
+                    to: url
+                )
+                print("MiThoughts branch export: saved document to \(url.path).")
+                logStatus("Exported selected branch.")
+            } catch {
+                print("MiThoughts branch export: failed to save document: \(error).")
+                showStatusMessage("Could not export selected branch: \(error.localizedDescription)")
+            }
+
             focusCanvas()
-            return
         }
-
-        if !MiThoughtsDocumentService.isDocumentFile(url) {
-            url.appendPathExtension(MiThoughtsDocumentService.fileExtension)
-        }
-        url = MiThoughtsDocumentService.preferredSpelling(of: url)
-
-        do {
-            try MiThoughtsDocumentService.export(
-                nodes: branchNodes,
-                connections: branchConnections,
-                summaries: branchSummaries(from: fragment, exportedNodeIDs: branchNodeIDs),
-                canvasSettings: appearance,
-                notePanelSettings: notePanelSettings,
-                documentType: .branch,
-                metadata: [
-                    "exportedNodeCount": "\(branchNodes.count)",
-                    "exportedConnectionCount": "\(branchConnections.count)"
-                ],
-                createdAt: Date(),
-                to: url
-            )
-            print("MiThoughts branch export: saved document to \(url.path).")
-            logStatus("Exported selected branch.")
-        } catch {
-            print("MiThoughts branch export: failed to save document: \(error).")
-            showStatusMessage("Could not export selected branch: \(error.localizedDescription)")
-        }
-
-        focusCanvas()
     }
 
     private func exportMapAsPDF() {
         isShowingAppearancePopover = false
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export as PDF"
-        savePanel.nameFieldStringValue = "MiThoughts Map.pdf"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [.pdf]
+        FilePanel.pickSaveURL(
+            title: "Export as PDF",
+            suggestedName: "MiThoughts Map.pdf",
+            types: [.pdf]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard savePanel.runModal() == .OK,
-              var url = savePanel.url else {
+            if url.pathExtension.lowercased() != "pdf" {
+                url.appendPathExtension("pdf")
+            }
+
+            do {
+                try MapExportRenderer.writePDF(payload: currentMapExportPayload(), to: url)
+                logStatus("Exported PDF.")
+            } catch {
+                print("MiThoughts PDF export: failed to export \(url.path): \(error).")
+                showStatusMessage("Could not export PDF: \(error.localizedDescription)")
+            }
+
             focusCanvas()
-            return
         }
-
-        if url.pathExtension.lowercased() != "pdf" {
-            url.appendPathExtension("pdf")
-        }
-
-        do {
-            try MapExportRenderer.writePDF(payload: currentMapExportPayload(), to: url)
-            logStatus("Exported PDF.")
-        } catch {
-            print("MiThoughts PDF export: failed to export \(url.path): \(error).")
-            showStatusMessage("Could not export PDF: \(error.localizedDescription)")
-        }
-
-        focusCanvas()
     }
 
     private func exportMapAsPNG() {
         isShowingAppearancePopover = false
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export as PNG"
-        savePanel.nameFieldStringValue = "MiThoughts Map.png"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [.png]
-
-        guard savePanel.runModal() == .OK,
-              var url = savePanel.url else {
-            focusCanvas()
-            return
-        }
-
-        if url.pathExtension.lowercased() != "png" {
-            url.appendPathExtension("png")
-        }
-
-        do {
-            let result = try MapExportRenderer.writePNG(payload: currentMapExportPayload(), to: url)
-            if let warning = result.warning {
-                showStatusMessage("Exported PNG.\n\n\(warning)")
-            } else {
-                logStatus("Exported PNG.")
+        FilePanel.pickSaveURL(
+            title: "Export as PNG",
+            suggestedName: "MiThoughts Map.png",
+            types: [.png]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
             }
-        } catch {
-            print("MiThoughts PNG export: failed to export \(url.path): \(error).")
-            showStatusMessage("Could not export PNG: \(error.localizedDescription)")
-        }
 
-        focusCanvas()
+            if url.pathExtension.lowercased() != "png" {
+                url.appendPathExtension("png")
+            }
+
+            do {
+                let result = try MapExportRenderer.writePNG(payload: currentMapExportPayload(), to: url)
+                if let warning = result.warning {
+                    showStatusMessage("Exported PNG.\n\n\(warning)")
+                } else {
+                    logStatus("Exported PNG.")
+                }
+            } catch {
+                print("MiThoughts PNG export: failed to export \(url.path): \(error).")
+                showStatusMessage("Could not export PNG: \(error.localizedDescription)")
+            }
+
+            focusCanvas()
+        }
     }
 
     private func printMap() {
@@ -2122,59 +2162,47 @@ struct InfiniteCanvasView: View {
     private func importMiThoughtsFile() {
         isShowingAppearancePopover = false
 
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Import MiThoughts File"
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-        openPanel.allowedContentTypes = [myThoughtsDocumentContentType]
-
-        guard openPanel.runModal() == .OK,
-              let url = openPanel.url else {
-            focusCanvas()
-            return
-        }
-
-        do {
-            let document = try MiThoughtsDocumentService.import(from: url)
-            if document.documentType == .branch {
-                importBranchDocument(document)
-            } else {
-                pendingImportDocument = document
-                isShowingImportConfirmation = true
+        FilePanel.pickFile(title: "Import MiThoughts File", types: [myThoughtsDocumentContentType]) { picked in
+            guard let url = picked else {
+                focusCanvas()
+                return
             }
-        } catch {
-            pendingImportDocument = nil
-            print("MiThoughts import: failed to load document from \(url.path): \(error).")
-            showStatusMessage("Could not import MiThoughts file: \(error.localizedDescription)")
-            focusCanvas()
+
+            do {
+                let document = try MiThoughtsDocumentService.import(from: url)
+                if document.documentType == .branch {
+                    importBranchDocument(document)
+                } else {
+                    pendingImportDocument = document
+                    isShowingImportConfirmation = true
+                }
+            } catch {
+                pendingImportDocument = nil
+                print("MiThoughts import: failed to load document from \(url.path): \(error).")
+                showStatusMessage("Could not import MiThoughts file: \(error.localizedDescription)")
+                focusCanvas()
+            }
         }
     }
 
     private func importIThoughtsFile() {
         isShowingAppearancePopover = false
 
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Import iThoughts .itmz"
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-        openPanel.allowedContentTypes = [iThoughtsDocumentContentType]
+        FilePanel.pickFile(title: "Import iThoughts .itmz", types: [iThoughtsDocumentContentType]) { picked in
+            guard let url = picked else {
+                focusCanvas()
+                return
+            }
 
-        guard openPanel.runModal() == .OK,
-              let url = openPanel.url else {
-            focusCanvas()
-            return
-        }
-
-        do {
-            pendingIThoughtsImportResult = try IThoughtsImportService.import(from: url)
-            isShowingIThoughtsImportConfirmation = true
-        } catch {
-            pendingIThoughtsImportResult = nil
-            print("iThoughts import: failed to load \(url.path): \(error).")
-            showStatusMessage("Could not import iThoughts file: \(error.localizedDescription)")
-            focusCanvas()
+            do {
+                pendingIThoughtsImportResult = try IThoughtsImportService.import(from: url)
+                isShowingIThoughtsImportConfirmation = true
+            } catch {
+                pendingIThoughtsImportResult = nil
+                print("iThoughts import: failed to load \(url.path): \(error).")
+                showStatusMessage("Could not import iThoughts file: \(error.localizedDescription)")
+                focusCanvas()
+            }
         }
     }
 
@@ -2221,6 +2249,7 @@ struct InfiniteCanvasView: View {
             .eraseToAnyPublisher()
     }
 
+    #if os(macOS)
     private func isEventForThisWindow(_ event: NSEvent) -> Bool {
         if let window = event.window, MapWindowRegistry.shared.isMapWindow(window) {
             return window === windowRef.window
@@ -2228,6 +2257,7 @@ struct InfiniteCanvasView: View {
         // Panels and popovers: the front map handles them.
         return MapWindowRegistry.shared.isActive(windowID)
     }
+    #endif
 
     // MARK: iThoughts (.itmz) files
 
@@ -2362,46 +2392,46 @@ struct InfiniteCanvasView: View {
     private func exportITMZFile() {
         isShowingAppearancePopover = false
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export as iThoughts"
-        savePanel.nameFieldStringValue = "\(suggestedMapFileName).\(ItmzExportService.fileExtension)"
-        savePanel.canCreateDirectories = true
-        savePanel.allowedContentTypes = [iThoughtsDocumentContentType]
-
-        guard savePanel.runModal() == .OK, var url = savePanel.url else {
-            focusCanvas()
-            return
-        }
-        if url.pathExtension.lowercased() != ItmzExportService.fileExtension {
-            url.appendPathExtension(ItmzExportService.fileExtension)
-        }
-
-        do {
-            // Exporting a copy: do not let the export redirect the open session's file.
-            let exportSession: ItmzEditingSession?
-            if let itmzSession {
-                exportSession = ItmzEditingSession(
-                    document: try ItmzDocument(data: try itmzSession.document.archiveData()),
-                    topicUUIDs: itmzSession.topicUUIDs,
-                    relationshipUUIDs: itmzSession.relationshipUUIDs,
-                    canvasOffset: itmzSession.canvasOffset
-                )
-            } else {
-                exportSession = nil
+        FilePanel.pickSaveURL(
+            title: "Export as iThoughts",
+            suggestedName: "\(suggestedMapFileName).\(ItmzExportService.fileExtension)",
+            types: [iThoughtsDocumentContentType]
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
             }
-            _ = try ItmzExportService.save(
-                nodes: nodes,
-                summaries: summaries,
-                relationships: relationships,
-                session: exportSession,
-                to: url
-            )
-            logStatus("Exported iThoughts file \(url.lastPathComponent).")
-        } catch {
-            print("iThoughts export: failed to write \(url.path): \(error).")
-            showStatusMessage("Could not export iThoughts file: \(error.localizedDescription)")
+            if url.pathExtension.lowercased() != ItmzExportService.fileExtension {
+                url.appendPathExtension(ItmzExportService.fileExtension)
+            }
+
+            do {
+                // Exporting a copy: do not let the export redirect the open session's file.
+                let exportSession: ItmzEditingSession?
+                if let itmzSession {
+                    exportSession = ItmzEditingSession(
+                        document: try ItmzDocument(data: try itmzSession.document.archiveData()),
+                        topicUUIDs: itmzSession.topicUUIDs,
+                        relationshipUUIDs: itmzSession.relationshipUUIDs,
+                        canvasOffset: itmzSession.canvasOffset
+                    )
+                } else {
+                    exportSession = nil
+                }
+                _ = try ItmzExportService.save(
+                    nodes: nodes,
+                    summaries: summaries,
+                    relationships: relationships,
+                    session: exportSession,
+                    to: url
+                )
+                logStatus("Exported iThoughts file \(url.lastPathComponent).")
+            } catch {
+                print("iThoughts export: failed to write \(url.path): \(error).")
+                showStatusMessage("Could not export iThoughts file: \(error.localizedDescription)")
+            }
+            focusCanvas()
         }
-        focusCanvas()
     }
 
     // MARK: Tasks
@@ -2552,36 +2582,35 @@ struct InfiniteCanvasView: View {
             return
         }
 
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export as \(format.label)"
-        savePanel.nameFieldStringValue = "\(suggestedMapFileName).\(format.fileExtension)"
-        savePanel.canCreateDirectories = true
-        if let type = UTType(filenameExtension: format.fileExtension) {
-            savePanel.allowedContentTypes = [type]
-        }
-        guard savePanel.runModal() == .OK, var url = savePanel.url else {
-            focusCanvas()
-            return
-        }
-        if url.pathExtension.lowercased() != format.fileExtension {
-            url.appendPathExtension(format.fileExtension)
-        }
+        FilePanel.pickSaveURL(
+            title: "Export as \(format.label)",
+            suggestedName: "\(suggestedMapFileName).\(format.fileExtension)",
+            types: UTType(filenameExtension: format.fileExtension).map { [$0] } ?? []
+        ) { picked in
+            guard var url = picked else {
+                focusCanvas()
+                return
+            }
+            if url.pathExtension.lowercased() != format.fileExtension {
+                url.appendPathExtension(format.fileExtension)
+            }
 
-        do {
-            let written = try OutlineFormatService.export(
-                format,
-                nodes: nodes,
-                relationships: relationships,
-                title: suggestedMapFileName,
-                to: url
-            )
-            let images = written.count - 1
-            logStatus("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
-        } catch {
-            print("\(format.label) export: failed to write \(url.path): \(error).")
-            showStatusMessage("Could not export \(format.label): \(error.localizedDescription)")
+            do {
+                let written = try OutlineFormatService.export(
+                    format,
+                    nodes: nodes,
+                    relationships: relationships,
+                    title: suggestedMapFileName,
+                    to: url
+                )
+                let images = written.count - 1
+                logStatus("Exported \(url.lastPathComponent)." + (images > 0 ? " \(images) image(s) were copied next to it." : ""))
+            } catch {
+                print("\(format.label) export: failed to write \(url.path): \(error).")
+                showStatusMessage("Could not export \(format.label): \(error.localizedDescription)")
+            }
+            focusCanvas()
         }
-        focusCanvas()
     }
 
     // MARK: Relationships
@@ -2837,28 +2866,25 @@ struct InfiniteCanvasView: View {
     }
 
     private func chooseImage(for nodeID: CanvasNode.ID) {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Topic Image"
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.image]
-        guard panel.runModal() == .OK, let url = panel.url,
-              let index = nodes.firstIndex(where: { $0.id == nodeID }) else {
+        FilePanel.pickFile(title: "Choose Topic Image", types: [.image]) { picked in
+            guard let url = picked,
+                  let index = nodes.firstIndex(where: { $0.id == nodeID }) else {
+                focusCanvas()
+                return
+            }
+            do {
+                let prepared = try TopicImageImport.prepare(contentsOf: url)
+                recordUndoSnapshot()
+                nodes[index].style.imageData = prepared.data
+                nodes[index].style.imageName = prepared.name
+                nodes[index].style.imageWidth = nil
+                resizeToFitContent(at: index)
+                saveNodes()
+            } catch {
+                showStatusMessage("Could not use this image: \(error.localizedDescription)")
+            }
             focusCanvas()
-            return
         }
-        do {
-            let prepared = try TopicImageImport.prepare(contentsOf: url)
-            recordUndoSnapshot()
-            nodes[index].style.imageData = prepared.data
-            nodes[index].style.imageName = prepared.name
-            nodes[index].style.imageWidth = nil
-            resizeToFitContent(at: index)
-            saveNodes()
-        } catch {
-            showStatusMessage("Could not use this image: \(error.localizedDescription)")
-        }
-        focusCanvas()
     }
 
     /// Grows/shrinks a topic around its centre to fit its text size and image.
@@ -4570,7 +4596,7 @@ struct InfiniteCanvasView: View {
 
     private func performUndo() {
         guard let snapshot = historyManager.undo(currentSnapshot: currentHistorySnapshot) else {
-            NSSound.beep()
+            PlatformFeedback.beep()
             return
         }
 
@@ -4581,7 +4607,7 @@ struct InfiniteCanvasView: View {
 
     private func performRedo() {
         guard let snapshot = historyManager.redo(currentSnapshot: currentHistorySnapshot) else {
-            NSSound.beep()
+            PlatformFeedback.beep()
             return
         }
 
@@ -4956,7 +4982,7 @@ struct InfiniteCanvasView: View {
         focusCanvas()
     }
 
-    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+    private func handleKeyEvent(_ event: CanvasKeyEvent) -> Bool {
         if isSearchFieldFocused {
             if event.keyCode == KeyCode.escape {
                 closeSearchPanel()
@@ -4996,7 +5022,7 @@ struct InfiniteCanvasView: View {
             // Leave Tab to the input method while it is still composing (e.g. pinyin).
             if event.keyCode == KeyCode.tab,
                event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-               !((event.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false) {
+               !event.isComposingText {
                 commitEditing(for: editingID)
                 guard nodes.contains(where: { $0.id == editingID }) else {
                     return true
@@ -5158,7 +5184,7 @@ struct InfiniteCanvasView: View {
         return false
     }
 
-    private func handleArrowKeyEvent(_ event: NSEvent) -> Bool {
+    private func handleArrowKeyEvent(_ event: CanvasKeyEvent) -> Bool {
         let isCommand = event.modifierFlags.contains(.command)
         let arrowKeys = [KeyCode.upArrow, KeyCode.downArrow, KeyCode.leftArrow, KeyCode.rightArrow]
 
@@ -5675,7 +5701,7 @@ struct InfiniteCanvasView: View {
                     return
                 }
                 // iThoughts: ⌘-click (or ⇧-click) adds or removes a topic from the selection.
-                let flags = NSApp.currentEvent?.modifierFlags ?? []
+                let flags = PlatformModifiers.current
                 if flags.contains(.command) || flags.contains(.shift) {
                     toggleNodeSelection(wrappedNode.id)
                 } else {
@@ -6690,7 +6716,7 @@ private struct NodeView: View {
             } else {
                 VStack(spacing: 4 * zoomScale) {
                     if let image = topicImage {
-                        Image(nsImage: image)
+                        Image(platformImage: image)
                             .resizable()
                             .interpolation(.high)
                             .aspectRatio(contentMode: .fit)
@@ -6804,7 +6830,7 @@ private struct NodeView: View {
                             Label {
                                 Text(entry.name)
                             } icon: {
-                                Image(nsImage: TopicColor.swatch(entry.hex))
+                                Image(platformImage: TopicColor.swatch(entry.hex))
                             }
                         }
                     }
@@ -6947,7 +6973,7 @@ private struct NodeView: View {
         return .system(size: max(base * zoomScale, 1))
     }
 
-    private var topicImage: NSImage? {
+    private var topicImage: PlatformImage? {
         TopicImageCache.image(for: node.id, data: node.style.imageData)
     }
 
@@ -6985,6 +7011,7 @@ private struct NodeView: View {
             .overlay(RoundedRectangle(cornerRadius: 2).stroke(Color.white.opacity(0.9), lineWidth: 1))
             .offset(x: 4, y: 4)
             .contentShape(Rectangle().inset(by: -6))
+            #if os(macOS)
             .onHover { inside in
                 if inside {
                     NSCursor.crosshair.push()
@@ -6992,6 +7019,7 @@ private struct NodeView: View {
                     NSCursor.pop()
                 }
             }
+            #endif
             .help("Drag to resize · double-click to fit the content")
             .onTapGesture(count: 2, perform: onFitToContent)
             .highPriorityGesture(
@@ -7087,6 +7115,91 @@ private enum KeyCode {
     static let delete: UInt16 = 51
     static let escape: UInt16 = 53
     static let forwardDelete: UInt16 = 117
+}
+
+/// The iPad toolbar's editing buttons (kept out of the main body, which is already long).
+private struct EditCommandReceivers: ViewModifier {
+    var isActive: () -> Bool
+    var addChild: () -> Void
+    var addSibling: () -> Void
+    var editTitle: () -> Void
+    var showDetails: () -> Void
+    var delete: () -> Void
+    var undo: () -> Void
+    var redo: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(publisher(MiThoughtsEditCommand.addChild)) { _ in addChild() }
+            .onReceive(publisher(MiThoughtsEditCommand.addSibling)) { _ in addSibling() }
+            .onReceive(publisher(MiThoughtsEditCommand.editTitle)) { _ in editTitle() }
+            .onReceive(publisher(MiThoughtsEditCommand.showDetails)) { _ in showDetails() }
+            .onReceive(publisher(MiThoughtsEditCommand.delete)) { _ in delete() }
+            .onReceive(publisher(MiThoughtsEditCommand.undo)) { _ in undo() }
+            .onReceive(publisher(MiThoughtsEditCommand.redo)) { _ in redo() }
+    }
+
+    private func publisher(_ name: Notification.Name) -> AnyPublisher<Notification, Never> {
+        let isActive = isActive
+        return NotificationCenter.default.publisher(for: name)
+            .filter { _ in MainActor.assumeIsolated { isActive() } }
+            .eraseToAnyPublisher()
+    }
+}
+
+/// One key press, from AppKit on the Mac or from a hardware keyboard on iPad.
+/// Key codes use the Mac's numbers (`KeyCode`).
+private struct CanvasKeyEvent {
+    struct Modifiers: OptionSet {
+        let rawValue: Int
+        static let command = Modifiers(rawValue: 1)
+        static let shift = Modifiers(rawValue: 2)
+        static let option = Modifiers(rawValue: 4)
+        static let control = Modifiers(rawValue: 8)
+    }
+
+    var keyCode: UInt16
+    var charactersIgnoringModifiers: String?
+    var modifierFlags: Modifiers
+    /// An input method (e.g. pinyin) is still composing text.
+    var isComposingText = false
+
+    #if os(macOS)
+    init(_ event: NSEvent) {
+        keyCode = event.keyCode
+        charactersIgnoringModifiers = event.charactersIgnoringModifiers
+        var flags: Modifiers = []
+        if event.modifierFlags.contains(.command) { flags.insert(.command) }
+        if event.modifierFlags.contains(.shift) { flags.insert(.shift) }
+        if event.modifierFlags.contains(.option) { flags.insert(.option) }
+        if event.modifierFlags.contains(.control) { flags.insert(.control) }
+        modifierFlags = flags
+        isComposingText = (event.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+    }
+    #else
+    init?(_ press: KeyPress) {
+        var flags: Modifiers = []
+        if press.modifiers.contains(.command) { flags.insert(.command) }
+        if press.modifiers.contains(.shift) { flags.insert(.shift) }
+        if press.modifiers.contains(.option) { flags.insert(.option) }
+        if press.modifiers.contains(.control) { flags.insert(.control) }
+        modifierFlags = flags
+        let codes: [KeyEquivalent: UInt16] = [
+            .return: KeyCode.return, .tab: KeyCode.tab, .escape: KeyCode.escape,
+            .delete: KeyCode.delete, .deleteForward: KeyCode.forwardDelete,
+            .leftArrow: KeyCode.leftArrow, .rightArrow: KeyCode.rightArrow,
+            .upArrow: KeyCode.upArrow, .downArrow: KeyCode.downArrow
+        ]
+        if let code = codes[press.key] {
+            keyCode = code
+            charactersIgnoringModifiers = nil
+        } else {
+            keyCode = UInt16.max
+            // ⇧ changes the character (e.g. "+"); without modifiers the key's own character.
+            charactersIgnoringModifiers = String(press.key.character)
+        }
+    }
+    #endif
 }
 
 private enum NavigationDirection {
@@ -7581,27 +7694,22 @@ private struct NodeDetailsView: View {
     }
 
     private func addFileLink() {
-        let openPanel = NSOpenPanel()
-        openPanel.title = "Add File Link"
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
+        FilePanel.pickFile(title: "Add File Link", types: []) { picked in
+            guard let url = picked else {
+                return
+            }
 
-        guard openPanel.runModal() == .OK,
-              let url = openPanel.url else {
-            return
-        }
-
-        onEditingBegan()
-        node.links.append(
-            NodeLink(
-                title: url.lastPathComponent,
-                urlString: url.absoluteString,
-                linkType: .file
+            onEditingBegan()
+            node.links.append(
+                NodeLink(
+                    title: url.lastPathComponent,
+                    urlString: url.absoluteString,
+                    linkType: .file
+                )
             )
-        )
-        syncLegacyAttachmentLinks()
-        onSave()
+            syncLegacyAttachmentLinks()
+            onSave()
+        }
     }
 
     private func openLink(_ link: NodeLink) {
@@ -7610,7 +7718,7 @@ private struct NodeDetailsView: View {
             return
         }
 
-        guard NSWorkspace.shared.open(url) else {
+        guard FilePanel.openExternally(url) else {
             onLinkOpenFailed("Could not open link.")
             return
         }
@@ -8127,11 +8235,11 @@ struct CanvasAppearance: Codable, Equatable {
         switch theme {
         case .systemDefault:
             CanvasThemeColors(
-                canvasBackground: Color(nsColor: .windowBackgroundColor),
+                canvasBackground: .platformWindowBackground,
                 grid: .secondary.opacity(0.16),
                 quadrantAxis: .secondary.opacity(0.36),
                 quadrantLabel: .secondary.opacity(0.72),
-                nodeBackground: Color(nsColor: .controlBackgroundColor),
+                nodeBackground: .platformControlBackground,
                 nodeBorder: .secondary.opacity(0.25),
                 selectedBorder: .accentColor,
                 nodeText: .primary,
@@ -8218,6 +8326,7 @@ struct CanvasThemeColors {
     var shadow: Color
 }
 
+#if os(macOS)
 private struct KeyboardEventMonitor: NSViewRepresentable {
     /// Key presses by default; also used for scroll-wheel events.
     var eventMask: NSEvent.EventTypeMask = .keyDown
@@ -8276,6 +8385,7 @@ private struct KeyboardEventMonitor: NSViewRepresentable {
         }
     }
 }
+#endif
 
 #Preview {
     InfiniteCanvasView()

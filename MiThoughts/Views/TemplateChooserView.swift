@@ -5,7 +5,7 @@ struct TemplateChooserView: View {
     let onChoose: (TemplateID) -> Void
     let onCancel: () -> Void
 
-    @State private var selectedTemplateID: TemplateID = .blankMap
+    @State private var selectedTemplateID: TemplateID? = .blankMap
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +47,7 @@ struct TemplateChooserView: View {
                     .keyboardShortcut(.cancelAction)
 
                 Button("Create") {
-                    onChoose(selectedTemplateID)
+                    onChoose(selectedTemplateID ?? .blankMap)
                 }
                 .keyboardShortcut(.defaultAction)
             }
